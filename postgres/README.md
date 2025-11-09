@@ -21,7 +21,7 @@ To use this module, you need to have a Nomad cluster running. You can then run t
 Here is an example of how to run the job with variables set:
 
 ```bash
-nomad run  \
+nomad run postgres/postgres.hcl \
   -var "datacenter=dc1" \
   -var "group_name=postgres-group" \
   -var "volume_id=pg_data" \
@@ -29,7 +29,7 @@ nomad run  \
   -var "db_port=5432" \
   -var "pg_version=13" \
   -var "pg_password=mysecretpassword" \
-  -var "pg_db_name=mydb" postgres/postgres.hcl
+  -var "pg_db_name=mydb"
 ```
 
 Alternatively, you can create a `.tfvars` file with the variable values and use the `-var-file` flag:

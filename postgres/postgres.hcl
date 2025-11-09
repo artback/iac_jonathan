@@ -46,7 +46,7 @@ job "postgres" {
   type = "service"
 
   # A group defines a set of tasks that should be co-located on the same client.
-  group "${var.group_name}" {
+  group "$${var.group_name}" {
     # The number of instances of this group to run.
     count = 1
 
