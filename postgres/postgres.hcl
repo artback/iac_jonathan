@@ -1,8 +1,3 @@
-variable "job_name" {
-  description = "The name of the Nomad job."
-  type        = string
-}
-
 variable "datacenter" {
   description = "The datacenter where the job should run."
   type        = string
@@ -44,7 +39,7 @@ variable "pg_db_name" {
 }
 
 # This job file defines a PostgreSQL service in Nomad.
-job "${var.job_name}" {
+job "postgres" {
   # Specifies the datacenters where the job can run.
   datacenters = ["${var.datacenter}"]
   # The type of job, "service" means it's a long-running service.
