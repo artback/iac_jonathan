@@ -1,3 +1,48 @@
+variable "job_name" {
+  description = "The name of the Nomad job."
+  type        = string
+}
+
+variable "datacenter" {
+  description = "The datacenter where the job should run."
+  type        = string
+}
+
+variable "group_name" {
+  description = "The name of the group within the job."
+  type        = string
+}
+
+variable "volume_id" {
+  description = "The ID of the host volume to use for data persistence."
+  type        = string
+}
+
+variable "host_volume_name" {
+  description = "The name of the host volume on the Nomad client."
+  type        = string
+}
+
+variable "db_port" {
+  description = "The port to expose for the database."
+  type        = number
+}
+
+variable "pg_version" {
+  description = "The version of PostgreSQL to use."
+  type        = string
+}
+
+variable "pg_password" {
+  description = "The password for the PostgreSQL database."
+  type        = string
+}
+
+variable "pg_db_name" {
+  description = "The name of the PostgreSQL database."
+  type        = string
+}
+
 # This job file defines a PostgreSQL service in Nomad.
 job "${var.job_name}" {
   # Specifies the datacenters where the job can run.
