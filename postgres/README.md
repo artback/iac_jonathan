@@ -16,10 +16,41 @@ This module uses a Nomad "host volume" for data persistence. This means that the
 
 ## Usage
 
-To use this module, you need to have a Nomad cluster running. You can then run the job using the Nomad CLI:
+To use this module, you need to have a Nomad cluster running. You can then run the job using the Nomad CLI.
+
+Here is an example of how to run the job with variables set:
 
 ```bash
-nomad run postgres/postgres.hcl
+nomad run postgres/postgres.hcl \
+  -var "job_name=postgres-dev" \
+  -var "datacenter=dc1" \
+  -var "group_name=postgres-group" \
+  -var "volume_id=pg_data" \
+  -var "host_volume_name=/opt/postgres-data" \
+  -var "db_port=5432" \
+  -var "pg_version=13" \
+  -var "pg_password=mysecretpassword" \
+  -var "pg_db_name=mydb"
+```
+
+Alternatively, you can create a `.tfvars` file with the variable values and use the `-var-file` flag:
+
+```hcl
+# postgres.tfvars
+job_name = "postgres-dev"
+datacenter = "dc1"
+group_name = "postgres-group"
+volume_id = "pg_data"
+host_volume_name = "/opt/postgres-data"
+db_port = 5432
+pg_version = "13"
+pg_password = "mysecretpassword"
+pg_db_name = "mydb"
+```
+
+Then run the job with:
+```bash
+nomad run -var-file="postgres.tfvars" postgres/postgres.hcl
 ```
 
 ## Variables
