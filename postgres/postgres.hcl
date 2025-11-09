@@ -3,15 +3,6 @@ variable "datacenter" {
   type        = string
 }
 
-variable "group_name" {
-  description = "The name of the group within the job."
-  type        = string
-}
-
-variable "volume_id" {
-  description = "The ID of the host volume to use for data persistence."
-  type        = string
-}
 
 variable "host_volume_name" {
   description = "The name of the host volume on the Nomad client."
@@ -46,13 +37,12 @@ job "postgres" {
   type = "service"
 
   # A group defines a set of tasks that should be co-located on the same client.
-  group "$${var.group_name}" {
+  group postgres-group {
     # The number of instances of this group to run.
     count = 1
 
     # Defines a host volume to persist PostgreSQL data.
-    # Using a variable for the Host Volume source
-    volume "${var.volume_id}" {
+    volume pgdata {
       type      = "host"
       source    = "${var.host_volume_name}"
       read_only = false
@@ -88,7 +78,7 @@ job "postgres" {
 
       # Mounts the host volume into the container.
       volume_mount {
-        volume      = "${var.volume_id}"
+        volume      = "pgdata"
         destination = "/var/lib/postgresql/data"
         read_only   = false
       }
