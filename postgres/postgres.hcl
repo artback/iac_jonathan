@@ -1,6 +1,7 @@
-variable "datacenter" {
-  description = "The datacenter where the job should run."
-  type        = string
+variable "datacenters" {
+  description = "The datacenters where the job should run."
+  type = list(string)
+  default = ["dc1"]
 }
 
 
@@ -9,10 +10,6 @@ variable "host_volume_name" {
   type        = string
 }
 
-variable "db_port" {
-  description = "The port to expose for the database."
-  type        = number
-}
 
 variable "pg_version" {
   description = "The version of PostgreSQL to use."
@@ -32,56 +29,55 @@ variable "pg_db_name" {
 # This job file defines a PostgreSQL service in Nomad.
 job "postgres" {
   # Specifies the datacenters where the job can run.
-  datacenters = ["${var.datacenter}"]
-  # The type of job, "service" means it's a long-running service.
+  datacenters = var.datacenters
   type = "service"
 
   # A group defines a set of tasks that should be co-located on the same client.
   group postgres-group {
-    # The number of instances of this group to run.
     count = 1
 
-    # Defines a host volume to persist PostgreSQL data.
     volume pgdata {
       type      = "host"
       source    = "${var.host_volume_name}"
       read_only = false
     }
 
-    # Configures the network for the group.
     network {
-      # Defines a port named "db".
-      port "db" {
-        # Assigns a static port from a variable.
-        static = var.db_port
-      }
+      mode = "bridge"
+      port "db" {}
     }
+      task "postgres" {
+        driver = "docker"
 
-    # Defines the main task to run, which is the PostgreSQL container.
-    task "postgres" {
-      # The driver to use for running the task, in this case, "docker".
-      driver = "docker"
+        config {
+          image = "postgres:${var.pg_version}-alpine"
+          ports = ["db"]
+        }
 
-      # Configuration for the Docker driver.
-      config {
-        # The Docker image to use.
-        image = "postgres:${var.pg_version}-alpine"
-        # Maps the "db" port to the container.
-        ports = ["db"]
-      }
+        env {
+          POSTGRES_PASSWORD = "${var.pg_password}" # Best practice is to use Nomad Secrets/Vault for this
+          POSTGRES_DB = "${var.pg_db_name}"
+        }
 
-      # Sets environment variables for the container.
-      env {
-        POSTGRES_PASSWORD = "${var.pg_password}" # Best practice is to use Nomad Secrets/Vault for this
-        POSTGRES_DB = "${var.pg_db_name}"
-      }
-
-      # Mounts the host volume into the container.
-      volume_mount {
-        volume      = "pgdata"
-        destination = "/var/lib/postgresql/data"
-        read_only   = false
-      }
+        # Mounts the host volume into the container.
+        volume_mount {
+          volume      = "pgdata"
+          destination = "/var/lib/postgresql/data"
+          read_only   = false
+        }
+        service {
+          name = "postgres"
+          tags = [
+            "postgres"
+          ]
+          port = "db"
+          check {
+            name     = "alive"
+            type     = "tcp"
+            interval = "10s"
+            timeout  = "2s"
+          }
+        }
     }
   }
 }

@@ -22,7 +22,7 @@ Here is an example of how to run the job with variables set:
 
 ```bash
 nomad run \
-  -var "datacenter=dc1" \
+  -var "datacenters=[\"dc1\"]" \
   -var "host_volume_name=postgres-data" \
   -var "db_port=5432" \
   -var "pg_version=13" \
@@ -54,7 +54,7 @@ nomad run -var-file="postgres.tfvars" postgres/postgres.hcl
 
 This module uses the following variables:
 
-- `datacenter`: The datacenter where the job should run.
+- `datacenters`: The datacenters where the job should run. (Default: ["dc1"])
 - `group_name`: The name of the group within the job.
 - `volume_id`: The ID of the host volume to use for data persistence.
 - `host_volume_name`: The name of the host volume on the Nomad client. This is the path to the directory on the host machine where the data will be stored.
