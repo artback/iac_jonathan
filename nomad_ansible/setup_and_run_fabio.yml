@@ -1,0 +1,55 @@
+---
+- name: Setup Nomad, Consul, and run Fabio job
+  hosts: all
+  become: yes
+  tasks:
+    - name: Install dependencies (Docker, unzip)
+      ansible.builtin.apt:
+        name: ['docker.io', 'unzip']
+        state: present
+
+    - name: Create data directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: nomad
+        group: nomad
+      loop:
+        - /etc/consul.d
+        - /opt/consul/data
+        - /etc/nomad.d
+        - /opt/nomad/data
+
+    - name: Render Nomad config file
+      ansible.builtin.template:
+        src: nomad.hcl.j2
+        dest: /etc/nomad.d/nomad.hcl
+        mode: '0644'
+
+    - name: Render Consul config file
+      ansible.builtin.template:
+        src: consul.hcl.j2
+        dest: /etc/consul.d/consul.hcl
+        mode: '0644'
+
+    - name: Start services (Consul and Nomad)
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - consul
+        - nomad
+
+    - name: Copy fabio module to remote
+      ansible.builtin.copy:
+        src: ../fabio/
+        dest: /tmp/fabio/
+
+    - name: Run Fabio Nomad job
+      community.general.nomad_job:
+        path: /tmp/fabio/fabio.hcl
+        state: present
+      vars:
+        # You can define your variables here
+        # service_ip: "192.168.1.10"
