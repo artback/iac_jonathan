@@ -40,12 +40,31 @@ variable "n8n_tags" {
   default     = ["urlprefix-/n8n"]
 }
 
+variable "volume_id" {
+  description = "The ID of the host volume to use for data persistence."
+  type        = string
+  default     = "n8n_data"
+}
+
+variable "host_volume_name" {
+  description = "The name of the host volume on the Nomad client."
+  type        = string
+  default     = "/opt/n8n-data"
+}
+
 job "n8n" {
   datacenters = var.datacenters
   type        = "service"
 
   group "n8n" {
     count = var.count
+    
+    volume "${var.volume_id}" {
+      type      = "host"
+      source    = var.host_volume_name
+      read_only = false
+    }
+
     network {
       port "http" {
         static = var.port
@@ -74,6 +93,11 @@ job "n8n" {
       resources {
         cpu    = var.cpu
         memory = var.memory
+      }
+      volume_mount {
+        volume      = var.volume_id
+        destination = "/home/node/.n8n"
+        read_only   = false
       }
     }
   }
