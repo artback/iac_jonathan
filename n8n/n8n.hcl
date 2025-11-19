@@ -34,6 +34,12 @@ variable "memory" {
   default     = 512 # n8n can be resource-intensive
 }
 
+variable "n8n_tags" {
+  description = "The tags for the n8n service."
+  type        = list(string)
+  default     = ["urlprefix-/n8n"]
+}
+
 job "n8n" {
   datacenters = var.datacenters
   type        = "service"
@@ -48,6 +54,7 @@ job "n8n" {
 
     service {
       name = "n8n"
+      tags = var.n8n_tags
       port = "http"
       check {
         name     = "alive"

@@ -15,7 +15,8 @@ Here is an example of how to run the job with variables set:
 
 ```bash
 nomad run n8n/n8n.hcl \
-  -var "port=8080"
+  -var "port=8080" \
+  -var "n8n_tags=[\"urlprefix-/myn8n\"]"
 ```
 
 Alternatively, you can create a `.tfvars` file with the variable values and use the `-var-file` flag:
@@ -40,4 +41,5 @@ This module uses the following variables:
 - `image`: The Docker image to use. (Default: "docker.n8n.io/n8nio/n8n")
 - `cpu`: The CPU resources to allocate. (Default: 500)
 - `memory`: The memory resources to allocate. (Default: 512)
+- `n8n_tags`: The tags for the n8n service for Fabio routing. (Default: ["urlprefix-/n8n"])
 
