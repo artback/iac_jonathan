@@ -21,26 +21,23 @@ To use this module, you need to have a Nomad cluster running. You can then run t
 Here is an example of how to run the job with variables set:
 
 ```bash
-nomad run \
+nomad run postgres/postgres.hcl \
   -var "datacenters=[\"dc1\"]" \
-  -var "host_volume_name=postgres-data" \
-  -var "db_port=5432" \
+  -var "host_volume_name=/opt/postgres-data" \
   -var "pg_version=13" \
+  -var "pg_user=myuser" \
   -var "pg_password=mysecretpassword" \
-  -var "pg_db_name=mydb" \
-  postgres/postgres.hcl 
+  -var "pg_db_name=mydb"
 ```
 
 Alternatively, you can create a `.tfvars` file with the variable values and use the `-var-file` flag:
 
 ```hcl
 # postgres.tfvars
-datacenter = "dc1"
-group_name = "postgres-group"
-volume_id = "pg_data"
+datacenters = ["dc1"]
 host_volume_name = "/opt/postgres-data"
-db_port = 5432
 pg_version = "13"
+pg_user = "myuser"
 pg_password = "mysecretpassword"
 pg_db_name = "mydb"
 ```
@@ -55,12 +52,11 @@ nomad run -var-file="postgres.tfvars" postgres/postgres.hcl
 This module uses the following variables:
 
 - `datacenters`: The datacenters where the job should run. (Default: ["dc1"])
-- `group_name`: The name of the group within the job.
-- `volume_id`: The ID of the host volume to use for data persistence.
 - `host_volume_name`: The name of the host volume on the Nomad client. This is the path to the directory on the host machine where the data will be stored.
-- `db_port`: The port to expose for the database.
+- `db_port`: The port to expose for the database. (Default: 5432)
 - `pg_version`: The version of PostgreSQL to use.
 - `pg_password`: The password for the PostgreSQL database.
 - `pg_db_name`: The name of the PostgreSQL database.
+- `pg_user`: The PostgreSQL user. (Default: "postgres")
 
 **Note:** It is recommended to use Nomad's built-in secrets management or HashiCorp Vault to manage the `pg_password` variable in a production environment.

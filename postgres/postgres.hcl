@@ -26,6 +26,18 @@ variable "pg_db_name" {
   type        = string
 }
 
+variable "db_port" {
+  description = "The port to expose for the database."
+  type        = number
+  default     = 5432
+}
+
+variable "pg_user" {
+  description = "The PostgreSQL user."
+  type        = string
+  default     = "postgres"
+}
+
 # This job file defines a PostgreSQL service in Nomad.
 job "postgres" {
   # Specifies the datacenters where the job can run.
@@ -44,7 +56,9 @@ job "postgres" {
 
     network {
       mode = "bridge"
-      port "db" {}
+      port "db" {
+        static = var.db_port
+      }
     }
       task "postgres" {
         driver = "docker"
@@ -55,8 +69,9 @@ job "postgres" {
         }
 
         env {
+          POSTGRES_USER     = var.pg_user
           POSTGRES_PASSWORD = "${var.pg_password}" # Best practice is to use Nomad Secrets/Vault for this
-          POSTGRES_DB = "${var.pg_db_name}"
+          POSTGRES_DB       = "${var.pg_db_name}"
         }
 
         # Mounts the host volume into the container.

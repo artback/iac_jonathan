@@ -71,3 +71,35 @@ This module uses the following variables:
 - `db_postgresdb_schema`: The PostgreSQL schema.
 - `db_postgresdb_password`: The PostgreSQL password.
 
+## Connecting to the PostgreSQL Module
+
+If you are running the `postgres` module from this project, you can connect this `n8n` module to it using Nomad's service discovery.
+
+First, ensure the `postgres` job is running. Then, when you run the `n8n` job, you can use the following variables to connect to the `postgres` service:
+
+- `db_postgresdb_host`: `"postgres.service.consul"`
+- `db_postgresdb_port`: `5432` (or the value of `db_port` in your `postgres` job)
+- `db_postgresdb_user`: The value of `pg_user` in your `postgres` job.
+- `db_postgresdb_password`: The value of `pg_password` in your `postgres` job.
+- `db_postgresdb_database`: The value of `pg_db_name` in your `postgres` job.
+- `db_postgresdb_schema`: `public` (usually)
+
+### Example
+
+1.  **Run the `postgres` job:**
+    ```bash
+    nomad run postgres/postgres.hcl \
+      -var "pg_user=n8n" \
+      -var "pg_password=a_strong_password" \
+      -var "pg_db_name=n8n"
+    ```
+
+2.  **Run the `n8n` job:**
+    ```bash
+    nomad run n8n/n8n.hcl \
+      -var "db_postgresdb_host=postgres.service.consul" \
+      -var "db_postgresdb_user=n8n" \
+      -var "db_postgresdb_password=a_strong_password" \
+      -var "db_postgresdb_database=n8n"
+    ```
+
