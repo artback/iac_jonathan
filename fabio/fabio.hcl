@@ -52,6 +52,12 @@ variable "memory" {
   default     = 128
 }
 
+variable "fabio_tags" {
+  description = "The tags for the Fabio service."
+  type        = list(string)
+  default     = ["urlprefix-/"]
+}
+
 job "${var.job_name}" {
   datacenters = var.datacenters
   type        = var.type
@@ -76,6 +82,12 @@ job "${var.job_name}" {
       resources {
         cpu    = var.cpu
         memory = var.memory
+      }
+
+      service {
+        name = "fabio"
+        tags = var.fabio_tags
+        port = "lb"
       }
     }
   }

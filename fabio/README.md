@@ -20,7 +20,8 @@ nomad run fabio/fabio.hcl \
   -var "job_name=fabio-prod" \
   -var "datacenters=[\"dc1\", \"dc2\"]" \
   -var "lb_port=80" \
-  -var "ui_port=8080"
+  -var "ui_port=8080" \
+  -var "fabio_tags=[\"urlprefix-/foo\", \"urlprefix-/bar\"]"
 ```
 
 Alternatively, you can create a `.tfvars` file with the variable values and use the `-var-file` flag:
@@ -51,3 +52,4 @@ This module uses the following variables:
 - `image`: The Docker image to use. (Default: "fabiolb/fabio")
 - `cpu`: The CPU resources to allocate. (Default: 200)
 - `memory`: The memory resources to allocate. (Default: 128)
+- `fabio_tags`: The tags for the Fabio service. (Default: ["urlprefix-/"])
