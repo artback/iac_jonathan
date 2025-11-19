@@ -11,14 +11,19 @@ This module deploys n8n, a free and open fair-code licensed workflow automation 
 
 To use this module, you need to have a Nomad cluster running. You can then run the job using the Nomad CLI.
 
-Here is an example of how to run the job with variables set:
+Here is an example of how to run the job with variables set for a PostgreSQL database:
 
 ```bash
 nomad run n8n/n8n.hcl \
   -var "port=8080" \
   -var "n8n_tags=[\"urlprefix-/myn8n\"]" \
-  -var "volume_id=my_n8n_data" \
-  -var "host_volume_name=/mnt/n8n_storage"
+  -var "host_volume_name=/mnt/n8n_storage" \
+  -var "db_postgresdb_database=n8n" \
+  -var "db_postgresdb_host=your_postgres_host" \
+  -var "db_postgresdb_port=5432" \
+  -var "db_postgresdb_user=n8n_user" \
+  -var "db_postgresdb_schema=public" \
+  -var "db_postgresdb_password=your_password"
 ```
 
 Alternatively, you can create a `.tfvars` file with the variable values and use the `-var-file` flag:
@@ -27,9 +32,14 @@ Alternatively, you can create a `.tfvars` file with the variable values and use 
 # n8n.tfvars
 port = 8080
 n8n_tags = ["urlprefix-/myn8n"]
-volume_id = "my_n8n_data"
 host_volume_name = "/mnt/n8n_storage"
-``````
+db_postgresdb_database = "n8n"
+db_postgresdb_host = "your_postgres_host"
+db_postgresdb_port = 5432
+db_postgresdb_user = "n8n_user"
+db_postgresdb_schema = "public"
+db_postgresdb_password = "your_password"
+```
 
 Then run the job with:
 ```bash
@@ -49,4 +59,15 @@ This module uses the following variables:
 - `n8n_tags`: The tags for the n8n service for Fabio routing. (Default: ["urlprefix-/n8n"])
 - `volume_id`: The ID of the host volume to use for data persistence. (Default: "n8n_data")
 - `host_volume_name`: The name of the host volume on the Nomad client. This is the path to the directory on the host machine where the data will be stored. (Default: "/opt/n8n-data")
+- `generic_timezone`: The generic timezone for n8n. (Default: "Europe/Berlin")
+- `tz`: The timezone for n8n. (Default: "Europe/Berlin")
+- `n8n_enforce_settings_file_permissions`: Enforce settings file permissions. (Default: true)
+- `n8n_runners_enabled`: Enable n8n runners. (Default: true)
+- `db_type`: The type of database to use. (Default: "postgresdb")
+- `db_postgresdb_database`: The PostgreSQL database name.
+- `db_postgresdb_host`: The PostgreSQL host.
+- `db_postgresdb_port`: The PostgreSQL port.
+- `db_postgresdb_user`: The PostgreSQL user.
+- `db_postgresdb_schema`: The PostgreSQL schema.
+- `db_postgresdb_password`: The PostgreSQL password.
 

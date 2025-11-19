@@ -52,6 +52,66 @@ variable "host_volume_name" {
   default     = "/opt/n8n-data"
 }
 
+variable "generic_timezone" {
+  description = "The generic timezone for n8n."
+  type        = string
+  default     = "Europe/Berlin"
+}
+
+variable "tz" {
+  description = "The timezone for n8n."
+  type        = string
+  default     = "Europe/Berlin"
+}
+
+variable "n8n_enforce_settings_file_permissions" {
+  description = "Enforce settings file permissions."
+  type        = bool
+  default     = true
+}
+
+variable "n8n_runners_enabled" {
+  description = "Enable n8n runners."
+  type        = bool
+  default     = true
+}
+
+variable "db_type" {
+  description = "The type of database to use."
+  type        = string
+  default     = "postgresdb"
+}
+
+variable "db_postgresdb_database" {
+  description = "The PostgreSQL database name."
+  type        = string
+}
+
+variable "db_postgresdb_host" {
+  description = "The PostgreSQL host."
+  type        = string
+}
+
+variable "db_postgresdb_port" {
+  description = "The PostgreSQL port."
+  type        = number
+}
+
+variable "db_postgresdb_user" {
+  description = "The PostgreSQL user."
+  type        = string
+}
+
+variable "db_postgresdb_schema" {
+  description = "The PostgreSQL schema."
+  type        = string
+}
+
+variable "db_postgresdb_password" {
+  description = "The PostgreSQL password."
+  type        = string
+}
+
 job "n8n" {
   datacenters = var.datacenters
   type        = "service"
@@ -89,6 +149,19 @@ job "n8n" {
       config {
         image = var.image
         ports = ["http"]
+      }
+      env {
+        GENERIC_TIMEZONE                        = var.generic_timezone
+        TZ                                      = var.tz
+        N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS = var.n8n_enforce_settings_file_permissions
+        N8N_RUNNERS_ENABLED                     = var.n8n_runners_enabled
+        DB_TYPE                                 = var.db_type
+        DB_POSTGRESDB_DATABASE                  = var.db_postgresdb_database
+        DB_POSTGRESDB_HOST                      = var.db_postgresdb_host
+        DB_POSTGRESDB_PORT                      = var.db_postgresdb_port
+        DB_POSTGRESDB_USER                      = var.db_postgresdb_user
+        DB_POSTGRESDB_SCHEMA                    = var.db_postgresdb_schema
+        DB_POSTGRESDB_PASSWORD                  = var.db_postgresdb_password
       }
       resources {
         cpu    = var.cpu
