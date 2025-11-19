@@ -1,4 +1,0 @@
-- name: Run Fabio Nomad job
-  community.general.nomad_job:
-    path: /path/to/your/fabio.hcl
-    state: present
