@@ -31,25 +31,19 @@ variable "cpu" {
 variable "memory" {
   description = "The memory resources to allocate."
   type        = number
-  default     = 512 # n8n can be resource-intensive
+  default     = 1024 # n8n can be resource-intensive
+}
+
+variable "volume_id" {
+  description = "The name of the docker volume."
+  type        = string
+  default     = "n8n_data"
 }
 
 variable "n8n_tags" {
   description = "The tags for the n8n service."
   type        = list(string)
   default     = ["urlprefix-/n8n"]
-}
-
-variable "volume_id" {
-  description = "The ID of the host volume to use for data persistence."
-  type        = string
-  default     = "n8n_data"
-}
-
-variable "host_volume_name" {
-  description = "The name of the host volume on the Nomad client."
-  type        = string
-  default     = "/opt/n8n-data"
 }
 
 variable "generic_timezone" {
@@ -87,16 +81,6 @@ variable "db_postgresdb_database" {
   type        = string
 }
 
-variable "db_postgresdb_host" {
-  description = "The PostgreSQL host."
-  type        = string
-}
-
-variable "db_postgresdb_port" {
-  description = "The PostgreSQL port."
-  type        = number
-}
-
 variable "db_postgresdb_user" {
   description = "The PostgreSQL user."
   type        = string
@@ -118,59 +102,71 @@ job "n8n" {
 
   group "n8n" {
     count = var.count
-    
-    volume "${var.volume_id}" {
-      type      = "host"
-      source    = var.host_volume_name
-      read_only = false
-    }
 
     network {
+      mode = "bridge"
       port "http" {
         static = var.port
       }
     }
 
-    service {
-      name = "n8n"
-      tags = var.n8n_tags
-      port = "http"
-      check {
-        name     = "alive"
-        type     = "http"
-        path     = "/"
-        interval = "10s"
-        timeout  = "2s"
-      }
-    }
-
     task "n8n" {
       driver = "docker"
+
+      service {
+        name = "n8n"
+        tags = var.n8n_tags
+        port = "http"
+        provider = "consul"
+        check {
+          name     = "alive"
+          type     = "tcp"
+          interval = "10s"
+          timeout  = "2s"
+        }
+      }
+
+
       config {
         image = var.image
         ports = ["http"]
-      }
-      env {
-        GENERIC_TIMEZONE                        = var.generic_timezone
-        TZ                                      = var.tz
-        N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS = var.n8n_enforce_settings_file_permissions
-        N8N_RUNNERS_ENABLED                     = var.n8n_runners_enabled
-        DB_TYPE                                 = var.db_type
-        DB_POSTGRESDB_DATABASE                  = var.db_postgresdb_database
-        DB_POSTGRESDB_HOST                      = var.db_postgresdb_host
-        DB_POSTGRESDB_PORT                      = var.db_postgresdb_port
-        DB_POSTGRESDB_USER                      = var.db_postgresdb_user
-        DB_POSTGRESDB_SCHEMA                    = var.db_postgresdb_schema
-        DB_POSTGRESDB_PASSWORD                  = var.db_postgresdb_password
+        mounts = [
+          {
+            type     = "volume"
+            source   = var.volume_id    # Uses "n8n_data" (Name, not path)
+            target   = "/home/node/.n8n"
+            readonly = false
+          }
+        ]
       }
       resources {
         cpu    = var.cpu
-        memory = var.memory
+        memory = var.memory # Now it uses the 1024MB from above
       }
-      volume_mount {
-        volume      = var.volume_id
-        destination = "/home/node/.n8n"
-        read_only   = false
+
+      template {
+        destination = "local/n8n.env"
+        env         = true
+        change_mode = "restart"
+
+        data = <<EOH
+            GENERIC_TIMEZONE="${var.generic_timezone}"
+            TZ="${var.tz}"
+            N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=${var.n8n_enforce_settings_file_permissions}
+            N8N_RUNNERS_ENABLED=${var.n8n_runners_enabled}
+            N8N_SECURE_COOKIE=false
+
+            DB_TYPE="${var.db_type}"
+            DB_POSTGRESDB_DATABASE="${var.db_postgresdb_database}"
+            DB_POSTGRESDB_SCHEMA="${var.db_postgresdb_schema}"
+            DB_POSTGRESDB_USER="${var.db_postgresdb_user}"
+            DB_POSTGRESDB_PASSWORD="${var.db_postgresdb_password}"
+
+            {{ range service "postgres" }}
+              DB_POSTGRESDB_HOST="{{ .Address }}"
+              DB_POSTGRESDB_PORT="{{ .Port }}"
+            {{ end }}
+        EOH
       }
     }
   }

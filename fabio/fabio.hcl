@@ -52,43 +52,59 @@ variable "memory" {
   default     = 128
 }
 
-variable "fabio_tags" {
-  description = "The tags for the Fabio service."
-  type        = list(string)
-  default     = ["urlprefix-/"]
+variable "service_ip" {
+  description = "The IP address used for service discovery"
+  type        = string
+
 }
 
-job "${var.job_name}" {
+job "fabio" {
   datacenters = var.datacenters
   type        = var.type
 
-  group "${var.group_name}" {
+  group "fabio" {
+    restart {
+      attempts = 3
+      interval = "1m"
+      delay    = "15s"
+      mode     = "delay"
+    }
     network {
+      mode = "bridge"
+
       port "lb" {
         static = var.lb_port
+        to     = 9999
       }
       port "ui" {
         static = var.ui_port
+        to     = 9998
       }
     }
+
     task "fabio" {
       driver = "docker"
-      config {
-        image        = var.image
-        network_mode = "host"
-        ports        = ["lb", "ui"]
+      env {
+        CONSUL_IP = var.service_ip
       }
+      config {
+        image = var.image
+        ports = ["lb", "ui"]
+        args = [
+          // Forces Fabio's service IP to the Tailscale IP
+          "-proxy.localip=${var.service_ip}",
 
+          // Forces the Consul connection address to the host's routable IP
+          "-registry.consul.addr=${var.service_ip}:8500",
+        ]
+      }
       resources {
         cpu    = var.cpu
         memory = var.memory
       }
-
-      service {
-        name = "fabio"
-        tags = var.fabio_tags
-        port = "lb"
-      }
+    }
+    service {
+      address = var.service_ip
     }
   }
 }
