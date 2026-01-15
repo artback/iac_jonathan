@@ -23,7 +23,7 @@ nomad run webserver/webserver.hcl \
 Alternatively, you can create a `.tfvars` file with the variable values and use the `-var-file` flag:
 
 ```hcl
-# webserver.tfvars
+# kalmar.tfvars
 count = 5
 http_port = 8080
 image = "httpd:2.4"

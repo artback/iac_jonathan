@@ -103,8 +103,5 @@ job "fabio" {
         memory = var.memory
       }
     }
-    service {
-      address = var.service_ip
-    }
   }
 }

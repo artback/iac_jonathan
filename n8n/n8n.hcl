@@ -96,12 +96,32 @@ variable "db_postgresdb_password" {
   type        = string
 }
 
+variable "db_postgresdb_timeout" {
+  description = "The PostgreSQL database timeout."
+  type        = number
+  default  = 30000
+}
+
 job "n8n" {
   datacenters = var.datacenters
   type        = "service"
 
   group "n8n" {
     count = var.count
+
+
+    restart {
+      attempts = 10        # Try more times locally
+      interval = "30m"
+      delay    = "15s"
+      mode     = "delay"   # "delay" keeps trying forever after the interval resets
+    }
+
+    reschedule {
+      unlimited = true
+      delay     = "30s"
+      delay_function = "exponential"
+    }
 
     network {
       mode = "bridge"
@@ -118,12 +138,6 @@ job "n8n" {
         tags = var.n8n_tags
         port = "http"
         provider = "consul"
-        check {
-          name     = "alive"
-          type     = "tcp"
-          interval = "10s"
-          timeout  = "2s"
-        }
       }
 
 
@@ -136,6 +150,13 @@ job "n8n" {
             source   = var.volume_id    # Uses "n8n_data" (Name, not path)
             target   = "/home/node/.n8n"
             readonly = false
+          },
+          {
+
+            type     = "bind"
+            source   =  "/home/dwight/Job applications/"    # Uses "n8n_data" (Name, not path)
+            target   = "/home/node/.n8n-files/"
+            readonly = false
           }
         ]
       }
@@ -147,7 +168,7 @@ job "n8n" {
       template {
         destination = "local/n8n.env"
         env         = true
-        change_mode = "restart"
+        change_mode = "noop"
 
         data = <<EOH
             GENERIC_TIMEZONE="${var.generic_timezone}"
@@ -161,10 +182,16 @@ job "n8n" {
             DB_POSTGRESDB_SCHEMA="${var.db_postgresdb_schema}"
             DB_POSTGRESDB_USER="${var.db_postgresdb_user}"
             DB_POSTGRESDB_PASSWORD="${var.db_postgresdb_password}"
-
-            {{ range service "postgres" }}
-              DB_POSTGRESDB_HOST="{{ .Address }}"
-              DB_POSTGRESDB_PORT="{{ .Port }}"
+            DB_POSTGRESDB_CONNECTION_TIMEOUT=${var.db_postgresdb_timeout}
+            {{ with service "postgres" }}
+            {{ with index . 0 }}
+            DB_POSTGRESDB_HOST="{{ .Address }}"
+            DB_POSTGRESDB_PORT="{{ .Port }}"
+            {{ end }}
+            {{ else }}
+            # FALLBACK: Consul couldn't find Postgres, using Tailscale IP
+            DB_POSTGRESDB_HOST="100.116.81.88"
+            DB_POSTGRESDB_PORT="5432"
             {{ end }}
         EOH
       }
