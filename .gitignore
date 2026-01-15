@@ -1,3 +1,8 @@
-./idea
+.idea/
+*.iws
 *.iml
+*.ipr
+*iml
+
 *.tfvars
+*.tfvars.json
