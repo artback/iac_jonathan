@@ -1,0 +1,12 @@
+---
+consul_datacenter: "kalmar"
+consul_data_dir: "/opt/consul"
+consul_ui_enabled: true
+consul_server_enabled: true
+consul_bootstrap_expect: 1
+consul_bind_interface: "tailscale0"
+consul_advertise_interface: "tailscale0"
+# IP or address to join the cluster. 
+# In a new cluster, the first node is the server, subsequent nodes join it.
+consul_retry_join_ips: 
+  - "100.116.81.88"

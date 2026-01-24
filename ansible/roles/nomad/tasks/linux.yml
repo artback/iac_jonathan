@@ -1,0 +1,78 @@
+---
+- name: Download Nomad
+  ansible.builtin.get_url:
+    url: "https://releases.hashicorp.com/nomad/1.6.1/nomad_1.6.1_linux_amd64.zip"
+    dest: "/tmp/nomad.zip"
+    mode: '0644'
+
+- name: Unzip Nomad
+  ansible.builtin.unarchive:
+    src: "/tmp/nomad.zip"
+    dest: "/usr/local/bin/"
+    remote_src: yes
+
+- name: Create Nomad group
+  ansible.builtin.group:
+    name: nomad
+    state: present
+
+- name: Create Nomad user
+  ansible.builtin.user:
+    name: nomad
+    group: nomad
+    system: yes
+    shell: /bin/false
+
+- name: Create Nomad data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: nomad
+    group: nomad
+    mode: '0755'
+  loop:
+    - /etc/nomad.d
+    - /opt/nomad/data
+
+- name: Render Nomad config file
+  ansible.builtin.template:
+    src: nomad.hcl.j2
+    dest: /etc/nomad.d/nomad.hcl
+    owner: nomad
+    group: nomad
+    mode: '0644'
+  notify: Restart Nomad
+
+- name: Create Nomad systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/nomad.service
+    content: |
+      [Unit]
+      Description=Nomad
+      Documentation=https://www.nomadproject.io/docs/
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      ExecReload=/bin/kill -HUP $MAINPID
+      ExecStart=/usr/local/bin/nomad agent -config /etc/nomad.d
+      KillMode=process
+      KillSignal=SIGINT
+      LimitNOFILE=65536
+      LimitNPROC=infinity
+      Restart=on-failure
+      RestartSec=2
+      StartLimitBurst=3
+      StartLimitIntervalSec=10
+      TasksMax=infinity
+      OOMScoreAdjust=-1000
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart Nomad
+
+- name: Start Nomad service
+  ansible.builtin.service:
+    name: nomad
+    state: started
+    enabled: true

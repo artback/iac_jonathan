@@ -1,0 +1,42 @@
+---
+- name: Install Nomad via Homebrew
+  community.general.homebrew:
+    name: nomad
+    state: present
+  become: false
+
+- name: Get Homebrew Prefix
+  ansible.builtin.command: brew --prefix
+  register: brew_prefix
+  changed_when: false
+  become: false
+
+- name: Set Nomad Paths
+  ansible.builtin.set_fact:
+    nomad_config_dir: "{{ brew_prefix.stdout }}/etc/nomad.d"
+    nomad_data_dir: "{{ brew_prefix.stdout }}/var/nomad"
+
+- name: Create Nomad data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ nomad_config_dir }}"
+    - "{{ nomad_data_dir }}"
+  become: false
+
+- name: Render Nomad config file
+  ansible.builtin.template:
+    src: nomad.hcl.j2
+    dest: "{{ nomad_config_dir }}/nomad.hcl"
+    mode: '0644'
+  notify: Restart Nomad macOS
+  become: false
+
+- name: Start Nomad service
+  ansible.builtin.command: brew services start nomad
+  register: brew_services_start
+  changed_when: "'successfully started' in brew_services_start.stdout"
+  failed_when: false
+  become: false

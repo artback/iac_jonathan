@@ -1,0 +1,44 @@
+# Ansible Inventory Example
+# Rename this file to 'inventory.ini' and update with your IPs.
+
+[servers]
+# These nodes will manage the cluster state (Raft consensus)
+# Recommended: 1, 3, or 5 servers for HA.
+192.168.1.10
+
+[clients]
+# These nodes will run your actual workloads (Docker containers)
+192.168.1.20
+192.168.1.21
+# Example of a Mac client
+192.168.1.30 ansible_user=jonathan
+
+[all:children]
+servers
+clients
+
+[all:vars]
+# SSH Configuration
+ansible_user=ubuntu
+# ansible_ssh_private_key_file=~/.ssh/id_rsa
+
+# --- Network Configuration ---
+# If you are NOT using Tailscale, you must override these interfaces!
+# For typical LAN (WiFi/Ethernet), set them to 'eth0' (Linux) or 'en0' (Mac).
+# consul_bind_interface=eth0
+# nomad_bind_interface=eth0
+# nomad_network_interface=eth0
+
+# Tailscale Auth Key (Only required if you want Ansible to install/auth Tailscale)
+# tailscale_auth_key=tskey-auth-xxxxx
+
+# --- Role Configuration ---
+[servers:vars]
+consul_server_enabled=true
+nomad_server_enabled=true
+nomad_client_enabled=false 
+
+[clients:vars]
+consul_server_enabled=false
+nomad_server_enabled=false
+nomad_client_enabled=true

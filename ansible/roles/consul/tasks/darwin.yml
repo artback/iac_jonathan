@@ -1,0 +1,42 @@
+---
+- name: Install Consul via Homebrew
+  community.general.homebrew:
+    name: consul
+    state: present
+  become: false
+
+- name: Get Homebrew Prefix
+  ansible.builtin.command: brew --prefix
+  register: brew_prefix
+  changed_when: false
+  become: false
+
+- name: Set Consul Paths
+  ansible.builtin.set_fact:
+    consul_config_dir: "{{ brew_prefix.stdout }}/etc/consul.d"
+    consul_data_dir: "{{ brew_prefix.stdout }}/var/consul"
+
+- name: Create Consul data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ consul_config_dir }}"
+    - "{{ consul_data_dir }}"
+  become: false
+
+- name: Render Consul config file
+  ansible.builtin.template:
+    src: consul.hcl.j2
+    dest: "{{ consul_config_dir }}/consul.hcl"
+    mode: '0644'
+  notify: Restart Consul macOS
+  become: false
+
+- name: Start Consul service
+  ansible.builtin.command: brew services start consul
+  register: brew_services_start
+  changed_when: "'successfully started' in brew_services_start.stdout"
+  failed_when: false
+  become: false

@@ -1,0 +1,75 @@
+---
+- name: Download Consul
+  ansible.builtin.get_url:
+    url: "https://releases.hashicorp.com/consul/1.16.1/consul_1.16.1_linux_amd64.zip"
+    dest: "/tmp/consul.zip"
+    mode: '0644'
+
+- name: Unzip Consul
+  ansible.builtin.unarchive:
+    src: "/tmp/consul.zip"
+    dest: "/usr/local/bin/"
+    remote_src: yes
+
+- name: Create Consul group
+  ansible.builtin.group:
+    name: consul
+    state: present
+
+- name: Create Consul user
+  ansible.builtin.user:
+    name: consul
+    group: consul
+    system: yes
+    shell: /bin/false
+
+- name: Create Consul data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: consul
+    group: consul
+    mode: '0755'
+  loop:
+    - /etc/consul.d
+    - /opt/consul/data
+
+- name: Render Consul config file
+  ansible.builtin.template:
+    src: consul.hcl.j2
+    dest: /etc/consul.d/consul.hcl
+    owner: consul
+    group: consul
+    mode: '0644'
+  notify: Restart Consul
+
+- name: Create Consul systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/consul.service
+    content: |
+      [Unit]
+      Description=Consul Service Discovery Agent
+      Documentation=https://www.consul.io/
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      User=consul
+      Group=consul
+      ExecStart=/usr/local/bin/consul agent -config-dir=/etc/consul.d/
+      ExecReload=/bin/kill -HUP $MAINPID
+      KillSignal=SIGINT
+      TimeoutStopSec=5
+      Restart=on-failure
+      SyslogIdentifier=consul
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart Consul
+
+- name: Start Consul service
+  ansible.builtin.service:
+    name: consul
+    state: started
+    enabled: true

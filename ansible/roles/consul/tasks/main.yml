@@ -1,0 +1,8 @@
+---
+- name: Install Consul (Linux)
+  include_tasks: linux.yml
+  when: ansible_os_family == "Debian"
+
+- name: Install Consul (macOS)
+  include_tasks: darwin.yml
+  when: ansible_os_family == "Darwin"

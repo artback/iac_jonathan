@@ -1,0 +1,14 @@
+---
+nomad_region: "europe"
+nomad_datacenter: "kalmar"
+nomad_data_dir: "/opt/nomad/data"
+nomad_server_enabled: true
+nomad_bootstrap_expect: 1
+nomad_client_enabled: true
+nomad_network_interface: "tailscale0"
+nomad_bind_interface: "tailscale0"
+nomad_acl_enabled: false
+# Address of the Consul agent (usually local if Consul is on the same node)
+nomad_consul_address: "127.0.0.1:8500" 
+# If utilizing the specific IP mentioned previously:
+# nomad_consul_address: "100.116.81.88:8500"

@@ -1,0 +1,10 @@
+---
+- name: Restart Consul
+  ansible.builtin.service:
+    name: consul
+    state: restarted
+  when: ansible_os_family == "Debian"
+
+- name: Restart Consul macOS
+  ansible.builtin.command: brew services restart consul
+  when: ansible_os_family == "Darwin"

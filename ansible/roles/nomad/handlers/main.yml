@@ -1,0 +1,10 @@
+---
+- name: Restart Nomad
+  ansible.builtin.service:
+    name: nomad
+    state: restarted
+  when: ansible_os_family == "Debian"
+
+- name: Restart Nomad macOS
+  ansible.builtin.command: brew services restart nomad
+  when: ansible_os_family == "Darwin"

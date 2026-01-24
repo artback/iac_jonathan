@@ -1,0 +1,52 @@
+# GLOBAL SETTINGS
+region = "{{ nomad_region }}"
+datacenter = "{{ nomad_datacenter }}"
+bind_addr =  "0.0.0.0"
+
+# SERVER CONFIGURATION
+server {
+  enabled = {{ nomad_server_enabled | lower }}
+  bootstrap_expect = {{ nomad_bootstrap_expect }}
+}
+
+# CLIENT CONFIGURATION
+client {
+  enabled = {{ nomad_client_enabled | lower }}
+  network_interface = "{{ nomad_network_interface }}"
+}
+
+plugin "docker" {
+  config {
+    volumes {
+      enabled = true
+    }
+  }
+}
+
+# DIRECTORY, PORTS, CONSUL
+data_dir  = "{{ nomad_data_dir }}"
+
+ports {
+  http = 4646
+  rpc  = 4647
+  serf = 4648
+}
+
+advertise {
+  # RPC is for Raft/server-to-server communication (Uses 4647)
+  rpc = "{{ '{{' }} GetInterfaceIP "{{ nomad_bind_interface }}" {{ '}}' }}"
+  # Serf is for cluster gossip/discovery (Uses 4648)
+  serf = "{{ '{{' }} GetInterfaceIP "{{ nomad_bind_interface }}" {{ '}}' }}"
+  # HTTP is for API/CLI (Uses 4646)
+  http = "{{ '{{' }} GetInterfaceIP "{{ nomad_bind_interface }}" {{ '}}' }}"
+}
+
+consul {
+  address = "{{ nomad_consul_address }}"
+}
+
+acl {
+  enabled    = {{ nomad_acl_enabled | lower }}
+  token_ttl  = "30s"
+  policy_ttl = "60s"
+}

@@ -1,0 +1,8 @@
+---
+- name: Install Tailscale (Linux)
+  include_tasks: linux.yml
+  when: ansible_os_family == "Debian"
+
+- name: Install Tailscale (macOS)
+  include_tasks: darwin.yml
+  when: ansible_os_family == "Darwin"

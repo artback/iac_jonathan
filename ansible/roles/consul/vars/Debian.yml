@@ -1,0 +1,2 @@
+---
+consul_data_dir: "/opt/consul/data"

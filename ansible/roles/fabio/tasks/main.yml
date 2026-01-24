@@ -1,0 +1,11 @@
+---
+- name: Copy fabio job file to remote
+  ansible.builtin.copy:
+    src: fabio.hcl
+    dest: /tmp/fabio.hcl
+    mode: '0644'
+
+- name: Run Fabio Nomad job
+  community.general.nomad_job:
+    path: /tmp/fabio.hcl
+    state: present

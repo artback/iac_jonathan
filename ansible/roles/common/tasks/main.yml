@@ -1,0 +1,22 @@
+---
+- name: Install dependencies (Linux)
+  ansible.builtin.apt:
+    name: ['docker.io', 'unzip', 'curl', 'gnupg', 'lsb-release']
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install dependencies (macOS)
+  community.general.homebrew:
+    name: ['curl', 'unzip']
+    state: present
+  when: ansible_os_family == "Darwin"
+  become: false
+
+- name: Install Docker (macOS)
+  community.general.homebrew_cask:
+    name: docker
+    state: present
+  when: ansible_os_family == "Darwin"
+  ignore_errors: yes
+  become: false

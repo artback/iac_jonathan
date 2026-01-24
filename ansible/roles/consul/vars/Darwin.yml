@@ -1,0 +1,4 @@
+---
+consul_data_dir: "/opt/homebrew/var/consul" 
+# Note: This is dynamically overridden in tasks/darwin.yml using 'set_fact' based on brew prefix, 
+# but a default here serves as a fallback or documentation.

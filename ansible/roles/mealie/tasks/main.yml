@@ -1,0 +1,18 @@
+---
+- name: Copy Mealie job file
+  ansible.builtin.copy:
+    src: ../../../mealie/mealie.hcl
+    dest: /tmp/mealie.hcl
+    mode: '0644'
+
+- name: Run Mealie Nomad job
+  community.general.nomad_job:
+    path: /tmp/mealie.hcl
+    state: present
+    vars:
+      db_postgresdb_root_password: "{{ postgres_root_password }}"
+      db_postgresdb_user: "{{ mealie_db_user | default('mealie') }}"
+      db_postgresdb_password: "{{ mealie_db_password }}"
+      db_postgresdb_database: "{{ mealie_db_name | default('mealie') }}"
+      service_tags: "{{ mealie_service_tags | default(['urlprefix-mealie.local/']) }}"
+      domain: "{{ mealie_domain | default('localhost') }}"
