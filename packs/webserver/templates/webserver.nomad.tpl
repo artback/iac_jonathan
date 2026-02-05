@@ -1,16 +1,16 @@
 job "webserver" {
-  datacenters = ["kalmar"]
+  datacenters = var.datacenters
   type = "service"
 
   group "webserver" {
-    count = 3
+    count = var.count
     network {
       port "http" {}
     }
 
     service {
-      name = "apache-webserver"
-      tags = ["urlprefix-/"]
+      name = var.service_name
+      tags = var.tags
       port = "http"
       check {
         name     = "alive"
@@ -31,7 +31,7 @@ job "webserver" {
     task "apache" {
       driver = "docker"
       config {
-        image = "httpd:latest"
+        image = var.image
         ports = ["http"]
       }
     }
