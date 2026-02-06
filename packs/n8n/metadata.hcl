@@ -6,5 +6,4 @@ pack {
 
 app {
   url     = "https://n8n.io/"
-  license = "Sustainable Use License"
 }

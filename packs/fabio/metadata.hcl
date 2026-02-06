@@ -6,6 +6,5 @@ pack {
 
 app {
   url     = "https://fabiolb.net/"
-  license = "MIT"
 }
 

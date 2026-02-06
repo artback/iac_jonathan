@@ -6,5 +6,4 @@ pack {
 
 app {
   url     = "https://www.postgresql.org/"
-  license = "PostgreSQL License"
 }

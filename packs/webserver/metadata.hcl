@@ -6,5 +6,4 @@ pack {
 
 app {
   url     = "https://httpd.apache.org/"
-  license = "Apache 2.0"
 }

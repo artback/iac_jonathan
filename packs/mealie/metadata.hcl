@@ -6,5 +6,4 @@ pack {
 
 app {
   url     = "https://mealie.io/"
-  license = "MIT"
 }
