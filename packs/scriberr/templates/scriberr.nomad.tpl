@@ -1,5 +1,5 @@
 job "scriberr" {
-  datacenters = var.datacenters
+  datacenters = [[ var "datacenters" . | toStringList ]]
   type        = "service"
 
   group "scriberr-group" {
@@ -16,20 +16,20 @@ job "scriberr" {
       driver = "docker"
 
       config {
-        image = "ghcr.io/rishikanthc/scriberr:${var.scriberr_version}"
+        image = "ghcr.io/rishikanthc/scriberr:[[ var "scriberr_version" . ]]"
         ports = ["http"]
         volumes = [
-          "${var.scriberr_data_volume}:/app/data",
-          "${var.env_data_volume}:/app/whisperx-env",
+          "[[ var "scriberr_data_volume" . ]]:/app/data",
+          "[[ var "env_data_volume" . ]]:/app/whisperx-env",
         ]
       }
 
       env {
-        PUID           = var.puid
-        PGID           = var.pgid
-        APP_ENV        = "production"
-        ALLOWED_ORIGINS = var.allowed_origins
-        SECURE_COOKIES  = var.secure_cookies
+        PUID            = "[[ var "puid" . ]]"
+        PGID            = "[[ var "pgid" . ]]"
+        APP_ENV         = "production"
+        ALLOWED_ORIGINS = "[[ var "allowed_origins" . ]]"
+        SECURE_COOKIES  = [[ var "secure_cookies" . ]]
       }
 
       resources {
@@ -40,7 +40,7 @@ job "scriberr" {
       service {
         name = "scriberr"
         port = "http"
-        tags = var.service_tags
+        tags = [[ var "service_tags" . | toStringList ]]
 
         check {
           name     = "alive"
