@@ -4,5 +4,4 @@
 *.ipr
 *iml
 
-*.tfvars
-*.tfvars.json
+./vars
