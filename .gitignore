@@ -4,4 +4,4 @@
 *.ipr
 *iml
 
-./vars
+vars/
