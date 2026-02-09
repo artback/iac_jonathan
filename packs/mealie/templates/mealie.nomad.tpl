@@ -1,5 +1,5 @@
 job "mealie" {
-  datacenters = var.datacenters
+  datacenters = [[ var "datacenters" . | toStringList ]]
   type        = "service"
 
   group "mealie-group" {
@@ -34,11 +34,11 @@ job "mealie" {
           DB_PORT="5432"
           {{ end }}
           
-          ROOT_DB_USER="${var.pg_root_user}"
-          ROOT_DB_PASS="${var.db_postgresdb_root_password}"
-          NEW_DB_USER="${var.db_postgresdb_user}"
-          NEW_DB_PASS="${var.db_postgresdb_password}"
-          NEW_DB_NAME="${var.db_postgresdb_database}"
+          ROOT_DB_USER="[[ var "pg_root_user" . ]]"
+          ROOT_DB_PASS="[[ var "db_postgresdb_root_password" . ]]"
+          NEW_DB_USER="[[ var "db_postgresdb_user" . ]]"
+          NEW_DB_PASS="[[ var "db_postgresdb_password" . ]]"
+          NEW_DB_NAME="[[ var "db_postgresdb_database" . ]]"
         EOH
       }
 
@@ -64,7 +64,7 @@ job "mealie" {
       driver = "docker"
 
       config {
-        image = "ghcr.io/mealie-recipes/mealie:${var.mealie_version}"
+        image = "ghcr.io/mealie-recipes/mealie:[[ var "mealie_version" . ]]"
         ports = ["http"]
       }
 
@@ -75,10 +75,10 @@ job "mealie" {
         data = <<EOH
           # Mealie DB Connection Settings
           DB_ENGINE="postgres"
-          POSTGRES_USER="${var.db_postgresdb_user}"
-          POSTGRES_PASSWORD="${var.db_postgresdb_password}"
-          POSTGRES_SCHEMA="${var.db_postgresdb_schema}"
-          POSTGRES_DB="${var.db_postgresdb_database}"
+          POSTGRES_USER="[[ var "db_postgresdb_user" . ]]"
+          POSTGRES_PASSWORD="[[ var "db_postgresdb_password" . ]]"
+          POSTGRES_SCHEMA="[[ var "db_postgresdb_schema" . ]]"
+          POSTGRES_DB="[[ var "db_postgresdb_database" . ]]"
           
           {{ with service "postgres" }}
           {{ with index . 0 }}
@@ -91,7 +91,7 @@ job "mealie" {
           {{ end }}
 
           # Required Mealie Settings
-          BASE_URL="http://${var.domain}" 
+          BASE_URL="http://[[ var "domain" . ]]" 
           ALLOW_SIGNUP="true"
           TZ="UTC"
         EOH
@@ -105,7 +105,7 @@ job "mealie" {
       service {
         name = "mealie"
         port = "http"
-        tags = var.service_tags
+        tags = [[ var "service_tags" . | toStringList ]]
 
         check {
           name     = "alive"

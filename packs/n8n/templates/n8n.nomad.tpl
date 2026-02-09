@@ -1,9 +1,9 @@
 job "n8n" {
-  datacenters = var.datacenters
+  datacenters = [[ var "datacenters" . | toStringList ]]
   type        = "service"
 
   group "n8n" {
-    count = var.count
+    count = [[ var "count" . ]]
 
 
     restart {
@@ -22,7 +22,7 @@ job "n8n" {
     network {
       mode = "bridge"
       port "http" {
-        static = var.port
+        static = [[ var "port" . ]]
       }
     }
 
@@ -31,19 +31,19 @@ job "n8n" {
 
       service {
         name = "n8n"
-        tags = var.n8n_tags
+        tags = [[ var "n8n_tags" . | toStringList ]]
         port = "http"
         provider = "consul"
       }
 
 
       config {
-        image = var.image
+        image = "[[ var "image" . ]]"
         ports = ["http"]
         mounts = [
           {
             type     = "volume"
-            source   = var.volume_id    # Uses "n8n_data" (Name, not path)
+            source   = "[[ var "volume_id" . ]]"    # Uses "n8n_data" (Name, not path)
             target   = "/home/node/.n8n"
             readonly = false
           },
@@ -57,8 +57,8 @@ job "n8n" {
         ]
       }
       resources {
-        cpu    = var.cpu
-        memory = var.memory # Now it uses the 1024MB from above
+        cpu    = [[ var "cpu" . ]]
+        memory = [[ var "memory" . ]] # Now it uses the 1024MB from above
       }
 
       template {
@@ -67,18 +67,18 @@ job "n8n" {
         change_mode = "noop"
 
         data = <<EOH
-            GENERIC_TIMEZONE="${var.generic_timezone}"
-            TZ="${var.tz}"
-            N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=${var.n8n_enforce_settings_file_permissions}
-            N8N_RUNNERS_ENABLED=${var.n8n_runners_enabled}
+            GENERIC_TIMEZONE="[[ var "generic_timezone" . ]]"
+            TZ="[[ var "tz" . ]]"
+            N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=[[ var "n8n_enforce_settings_file_permissions" . ]]
+            N8N_RUNNERS_ENABLED=[[ var "n8n_runners_enabled" . ]]
             N8N_SECURE_COOKIE=false
 
-            DB_TYPE="${var.db_type}"
-            DB_POSTGRESDB_DATABASE="${var.db_postgresdb_database}"
-            DB_POSTGRESDB_SCHEMA="${var.db_postgresdb_schema}"
-            DB_POSTGRESDB_USER="${var.db_postgresdb_user}"
-            DB_POSTGRESDB_PASSWORD="${var.db_postgresdb_password}"
-            DB_POSTGRESDB_CONNECTION_TIMEOUT=${var.db_postgresdb_timeout}
+            DB_TYPE="[[ var "db_type" . ]]"
+            DB_POSTGRESDB_DATABASE="[[ var "db_postgresdb_database" . ]]"
+            DB_POSTGRESDB_SCHEMA="[[ var "db_postgresdb_schema" . ]]"
+            DB_POSTGRESDB_USER="[[ var "db_postgresdb_user" . ]]"
+            DB_POSTGRESDB_PASSWORD="[[ var "db_postgresdb_password" . ]]"
+            DB_POSTGRESDB_CONNECTION_TIMEOUT=[[ var "db_postgresdb_timeout" . ]]
             {{ with service "postgres" }}
             {{ with index . 0 }}
             DB_POSTGRESDB_HOST="{{ .Address }}"

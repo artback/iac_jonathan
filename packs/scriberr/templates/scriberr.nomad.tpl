@@ -25,11 +25,15 @@ job "scriberr" {
       }
 
       env {
-        PUID            = "[[ var "puid" . ]]"
-        PGID            = "[[ var "pgid" . ]]"
-        APP_ENV         = "production"
+        PUID           = "[[ var "puid" . ]]"
+        PGID           = "[[ var "pgid" . ]]"
+        APP_ENV        = "production"
         ALLOWED_ORIGINS = "[[ var "allowed_origins" . ]]"
         SECURE_COOKIES  = [[ var "secure_cookies" . ]]
+        ENABLE_DIARIZATION = [[ var "enable_diarization" . ]]
+        HUGGINGFACE_ACCESS_TOKEN = "[[ var "huggingface_access_token" . ]]"
+        ENABLE_CANARY = [[ var "enable_canary" . ]]
+        ENABLE_PARAKEET = [[ var "enable_parakeet" . ]]
       }
 
       resources {

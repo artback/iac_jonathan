@@ -57,3 +57,27 @@ variable "secure_cookies" {
   type        = bool
   default     = true
 }
+
+variable "enable_diarization" {
+  description = "Whether to enable speaker diarization (Smart Speaker Detection). Requires HuggingFace token if true."
+  type        = bool
+  default     = false
+}
+
+variable "huggingface_access_token" {
+  description = "HuggingFace access token for PyAnnote diarization."
+  type        = string
+  default     = ""
+}
+
+variable "enable_canary" {
+  description = "Whether to enable NVIDIA Canary model."
+  type        = bool
+  default     = false
+}
+
+variable "enable_parakeet" {
+  description = "Whether to enable NVIDIA Parakeet model."
+  type        = bool
+  default     = false
+}

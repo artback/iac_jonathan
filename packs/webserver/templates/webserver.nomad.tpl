@@ -1,16 +1,16 @@
 job "webserver" {
-  datacenters = var.datacenters
+  datacenters = [[ var "datacenters" . | toStringList ]]
   type = "service"
 
   group "webserver" {
-    count = var.count
+    count = [[ var "count" . ]]
     network {
       port "http" {}
     }
 
     service {
-      name = var.service_name
-      tags = var.tags
+      name = "[[ var "service_name" . ]]"
+      tags = [[ var "tags" . | toStringList ]]
       port = "http"
       check {
         name     = "alive"
@@ -31,7 +31,7 @@ job "webserver" {
     task "apache" {
       driver = "docker"
       config {
-        image = var.image
+        image = "[[ var "image" . ]]"
         ports = ["http"]
       }
     }

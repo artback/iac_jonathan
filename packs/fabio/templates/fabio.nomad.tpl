@@ -1,6 +1,6 @@
 job "fabio" {
-  datacenters = var.datacenters
-  type        = var.type
+  datacenters = [[ var "datacenters" . | toStringList ]]
+  type        = "[[ var "type" . ]]"
 
   group "fabio" {
     restart {
@@ -13,11 +13,11 @@ job "fabio" {
       mode = "bridge"
 
       port "lb" {
-        static = var.lb_port
+        static = [[ var "lb_port" . ]]
         to     = 9999
       }
       port "ui" {
-        static = var.ui_port
+        static = [[ var "ui_port" . ]]
         to     = 9998
       }
     }
@@ -25,22 +25,22 @@ job "fabio" {
     task "fabio" {
       driver = "docker"
       env {
-        CONSUL_IP = var.service_ip
+        CONSUL_IP = "[[ var "service_ip" . ]]"
       }
       config {
-        image = var.image
+        image = "[[ var "image" . ]]"
         ports = ["lb", "ui"]
         args = [
           // Forces Fabio's service IP to the Tailscale IP
-          "-proxy.localip=${var.service_ip}",
+          "-proxy.localip=[[ var "service_ip" . ]]",
 
           // Forces the Consul connection address to the host's routable IP
-          "-registry.consul.addr=${var.service_ip}:8500",
+          "-registry.consul.addr=[[ var "service_ip" . ]]:8500",
         ]
       }
       resources {
-        cpu    = var.cpu
-        memory = var.memory
+        cpu    = [[ var "cpu" . ]]
+        memory = [[ var "memory" . ]]
       }
     }
   }
