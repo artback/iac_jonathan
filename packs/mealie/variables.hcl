@@ -53,5 +53,5 @@ variable "db_postgresdb_database" {
 variable "service_tags" {
   description = "The tags for the mealie service."
   type        = list(string)
-  default     = ["urlprefix-mealie.localhost/"]
+  default     = ["urlprefix-/mealie"]
 }

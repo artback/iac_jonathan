@@ -26,10 +26,12 @@ job "mealie" {
         env         = true
         change_mode = "restart"
         data = <<EOH
-          DB_HOST="{{ range service "postgres" }}{{ .Address }}{{ end }}"
-          DB_PORT="{{ range service "postgres" }}{{ .Port }}{{ end }}"
-          # Fallback if service discovery fails
-          {{ if eq (env "DB_HOST") "" }}
+          {{ with service "postgres" }}
+          {{ with index . 0 }}
+          DB_HOST="{{ .Address }}"
+          DB_PORT="{{ .Port }}"
+          {{ end }}
+          {{ else }}
           DB_HOST="100.116.81.88"
           DB_PORT="5432"
           {{ end }}
@@ -74,7 +76,7 @@ job "mealie" {
         change_mode = "restart"
         data = <<EOH
           # Mealie DB Connection Settings
-          DB_ENGINE="postgres"
+          DB_TYPE="postgres"
           POSTGRES_USER="[[ var "db_postgresdb_user" . ]]"
           POSTGRES_PASSWORD="[[ var "db_postgresdb_password" . ]]"
           POSTGRES_SCHEMA="[[ var "db_postgresdb_schema" . ]]"
