@@ -19,7 +19,7 @@ variable "scriberr_version" {
 variable "service_tags" {
   description = "The tags for the scriberr service."
   type        = list(string)
-  default     = ["urlprefix-scriberr.localhost/"]
+  default     = ["urlprefix-/scriberr"]
 }
 
 variable "scriberr_data_volume" {
@@ -44,6 +44,12 @@ variable "pgid" {
   description = "PGID for the scriberr process."
   type        = string
   default     = "1000"
+}
+
+variable "scriberr_port" {
+  description = "The fixed host port for scriberr."
+  type        = number
+  default     = 8080
 }
 
 variable "allowed_origins" {

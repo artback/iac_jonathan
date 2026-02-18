@@ -8,7 +8,8 @@ job "scriberr" {
     network {
       mode = "bridge"
       port "http" {
-        to = 8080
+        static = [[ var "scriberr_port" . ]]
+        to     = 8080
       }
     }
 
@@ -20,7 +21,7 @@ job "scriberr" {
         ports = ["http"]
         volumes = [
           "[[ var "scriberr_data_volume" . ]]:/app/data",
-          "[[ var "env_data_volume" . ]]:/app/whisperx-env",
+          "[[ var "env_data_volume" . ]]:/app/storage",
         ]
       }
 
@@ -28,8 +29,13 @@ job "scriberr" {
         PUID           = "[[ var "puid" . ]]"
         PGID           = "[[ var "pgid" . ]]"
         APP_ENV        = "production"
+        PYTHON_ENV_PATH = "/app/data/whisperx-env"
         ALLOWED_ORIGINS = "[[ var "allowed_origins" . ]]"
         SECURE_COOKIES  = [[ var "secure_cookies" . ]]
+        DB_PATH         = "/app/data/scriberr.db"
+        UPLOAD_DIR      = "/app/data/uploads"
+        TRANSCRIPT_DIR  = "/app/data/transcripts"
+        WHISPER_MODEL   = "base"
         ENABLE_DIARIZATION = [[ var "enable_diarization" . ]]
         HUGGINGFACE_ACCESS_TOKEN = "[[ var "huggingface_access_token" . ]]"
         ENABLE_CANARY = [[ var "enable_canary" . ]]
@@ -38,7 +44,7 @@ job "scriberr" {
 
       resources {
         cpu    = 1000
-        memory = 2048
+        memory = 3072
       }
 
       service {
