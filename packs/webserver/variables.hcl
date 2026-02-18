@@ -16,16 +16,22 @@ variable "count" {
   default     = 3
 }
 
+variable "webserver_port" {
+  description = "The fixed host port for webserver."
+  type        = number
+  default     = 10000 
+}
+
 variable "service_name" {
   description = "The name of the service."
   type        = string
-  default     = "apache-webserver"
+  default     = "webserver"
 }
 
-variable "tags" {
+variable "service_tags" {
   description = "The tags for the service."
   type        = list(string)
-  default     = ["urlprefix-/"]
+  default     = ["urlprefix-/webserver strip=/webserver"]
 }
 
 variable "image" {
@@ -33,3 +39,10 @@ variable "image" {
   type        = string
   default     = "httpd:latest"
 }
+
+variable "index_html" {
+  description = "The HTML content for index.html"
+  type        = string
+  default     = "<html><body><h1>Hello World</h1></body></html>"
+}
+

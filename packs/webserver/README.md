@@ -15,42 +15,32 @@ Here is an example of how to run the job with variables set:
 
 ```bash
 nomad run webserver/webserver.hcl \
-  -var "count=5" \
-  -var "http_port=8080" \
+  -var "count=3" \
   -var "image=httpd:2.4"
 ```
 
-Alternatively, you can create a `.tfvars` file with the variable values and use the `-var-file` flag:
+Alternatively, you can create a `.pkrvars.hcl` file with the variable values and use the `-var-file` flag:
 
 ```hcl
-# kalmar.tfvars
-count = 5
-http_port = 8080
+# webserver.pkrvars.hcl
+count = 3
 image = "httpd:2.4"
+index_html = "<html><body><h1>Custom Content</h1></body></html>"
 ```
 
 Then run the job with:
 ```bash
-nomad run -var-file="webserver.tfvars" webserver/webserver.hcl
+nomad run -var-file="webserver.pkrvars.hcl" webserver/webserver.hcl
 ```
 
 ## Variables
 
 This module uses the following variables:
 
-- `datacenters`: The datacenters where the job should run. (Default: ["dc1"])
-- `type`: The type of job. (Default: "service")
+- `job_name`: The name of the job. (Default: "webserver")
+- `datacenters`: The datacenters where the job should run. (Default: ["kalmar"])
 - `count`: The number of instances to run. (Default: 3)
-- `http_port`: The port for HTTP traffic. (Default: 80)
 - `service_name`: The name of the service. (Default: "apache-webserver")
-- `service_tags`: The tags for the service. (Default: ["urlprefix-/"])
-- `check_name`: The name of the health check. (Default: "alive")
-- `check_type`: The type of the health check. (Default: "http")
-- `check_path`: The path for the health check. (Default: "/")
-- `check_interval`: The interval for the health check. (Default: "10s")
-- `check_timeout`: The timeout for the health check. (Default: "2s")
-- `restart_attempts`: The number of restart attempts. (Default: 2)
-- `restart_interval`: The interval for restart attempts. (Default: "30m")
-- `restart_delay`: The delay between restart attempts. (Default: "15s")
-- `restart_mode`: The restart mode. (Default: "fail")
+- `service_tags`: The tags for the service. (Default: ["urlprefix-/webserver"])
 - `image`: The Docker image to use. (Default: "httpd:latest")
+- `index_html`: The HTML content for index.html. (Default: "<html><body><h1>Hello World</h1></body></html>")
