@@ -33,19 +33,19 @@ job "[[ var "job_name" . ]]" {
       mode     = "fail"
     }
 
-    task "nginx" {
+    task "server" {
       driver = "docker"
       config {
         # Ensure your pack variables use "nginx:alpine" for this to work
         image = "[[ var "image" . ]]"
         ports = ["http"]
         
-        # FIX: Mount the index.html into the Nginx default directory
+        # FIX: Mount the index.html into the webserver directory
         mounts = [
           {
             type   = "bind"
             source = "local/index.html"
-            target = "/usr/local/apache2/htdocs/index.html"
+            target = "[[ var "target_path" . ]]"
           }
         ]
       }

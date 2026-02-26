@@ -46,3 +46,9 @@ variable "index_html" {
   default     = "<html><body><h1>Hello World</h1></body></html>"
 }
 
+variable "target_path" {
+  description = "The target path for index.html (e.g., /usr/local/apache2/htdocs/index.html for Apache or /usr/share/nginx/html/index.html for Nginx)."
+  type        = string
+  default     = "/usr/local/apache2/htdocs/index.html"
+}
+
