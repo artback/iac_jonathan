@@ -98,6 +98,29 @@ See [ansible/README.md](ansible/README.md) for details.
 | `ansible/` | Node provisioning (Tailscale, Docker, Consul, Nomad). |
 | `terraform/` | Optional AWS module for cloud nodes. |
 
+## Troubleshooting
+
+Run `task doctor` first — it checks the CLIs, certs, mTLS API, and the HTTPS
+entry point. Then:
+
+- **All service jobs `pending`, system jobs running, node `ready`** → Consul
+  on the node is down. Nomad silently adds a
+  `${attr.consul.version} >= 1.8.0` constraint to every service-registering
+  job, and without a local Consul agent no node is eligible.
+- **Consul crash-looping with "refusing to rejoin cluster ... server_rejoin_age_max"**
+  → the node was offline >168h. Do **not** wipe the data dir; the config sets
+  `server_rejoin_age_max = "87600h"` (on the Pi:
+  `/etc/consul.d/zz-rejoin-age.hcl`).
+- **Consul unit stuck `activating`, killed every 90s despite "agent running"
+  in the logs** → Consul doesn't send systemd `READY=1` with TLS enabled. The
+  Pi has a drop-in (`/etc/systemd/system/consul.service.d/override.conf`)
+  setting `Type=exec`; the Ansible role's unit is already `Type=simple`.
+- **`nomad` CLI gets EOF from the API** → client certs not found/presented.
+  `task doctor` verifies the paths the Taskfile exports.
+- **`nomad-pack` says "Failed Job Conflict Validation"** → job was once
+  submitted with raw `nomad job run`; fix with `nomad job stop -purge <name>`
+  then `task deploy`.
+
 ## Terraform (optional cloud nodes)
 
 ```bash

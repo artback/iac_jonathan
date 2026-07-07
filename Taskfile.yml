@@ -60,6 +60,22 @@ tasks:
         eval "$(./scripts/resolve-service.sh '{{.SERVICE}}' '{{.PACK | default ""}}')"
         nomad-pack destroy "packs/$PACK" $VAR_FLAG
 
+  deploy:all:
+    desc: Deploy every service that has a vars file (disaster recovery / full sync)
+    cmds:
+      - |
+        seen=""
+        for f in vars/*.hcl; do
+          [ -e "$f" ] || continue
+          case "$f" in *.example.hcl) continue ;; esac
+          name=$(basename "$f" .hcl); name=${name%-kalmar.pkrvars}
+          case " $seen " in *" $name "*) continue ;; esac
+          seen="$seen $name"
+          echo "==> deploying $name"
+          eval "$(./scripts/resolve-service.sh "$name" '')"
+          nomad-pack run "packs/$PACK" $VAR_FLAG || echo "!! $name failed"
+        done
+
   # ------------------------------------------------------------------ status
 
   status:
@@ -71,6 +87,43 @@ tasks:
     desc: Show cluster nodes
     cmds:
       - nomad node status
+
+  doctor:
+    desc: Check local prerequisites and cluster reachability
+    silent: true
+    cmds:
+      - |
+        ok=0; fail=0
+        chk() { if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; ok=$((ok+1)); else echo "FAIL $1  ($3)"; fail=$((fail+1)); fi; }
+        chk "nomad CLI"        "command -v nomad"       "brew install nomad"
+        chk "nomad-pack CLI"   "command -v nomad-pack"  "brew install nomad-pack"
+        chk "ansible CLI"      "command -v ansible-playbook" "brew install ansible"
+        chk "nomad CA cert"    "test -r \"$NOMAD_CACERT\""      "fetch certs to ~/.config/homelab/certs"
+        chk "nomad client cert" "test -r \"$NOMAD_CLIENT_CERT\" -a -r \"$NOMAD_CLIENT_KEY\"" "fetch certs to ~/.config/homelab/certs"
+        chk "Nomad API (mTLS)" "nomad status"           "is Tailscale up? certs valid?"
+        chk "HTTPS entrypoint" "curl -s -m 8 -o /dev/null https://raspberrypi.tailb9a8bb.ts.net/" "check tailscale serve + fabio on the node"
+        echo "----"; echo "$ok ok, $fail failing"
+        [ "$fail" -eq 0 ]
+
+  check:
+    desc: Validate packs render and Ansible/shell syntax (run before committing)
+    cmds:
+      - |
+        for p in packs/*/; do
+          name=$(basename "$p")
+          # Dummy values for variables without defaults, so render succeeds.
+          case "$name" in
+            generic)  flags="-f vars/whoami.example.hcl" ;;
+            fabio)    flags="--var service_ip=100.116.81.88" ;;
+            mealie)   flags="--var db_postgresdb_root_password=x --var db_postgresdb_password=x" ;;
+            n8n)      flags="--var db_postgresdb_database=x --var db_postgresdb_user=x --var db_postgresdb_schema=x --var db_postgresdb_password=x" ;;
+            postgres) flags="--var pg_version=16 --var pg_password=x --var pg_db_name=x" ;;
+            *)        flags="" ;;
+          esac
+          nomad-pack render "$p" $flags >/dev/null && echo "render ok  $name" || { echo "render FAIL $name"; exit 1; }
+        done
+      - bash -n scripts/new-service.sh && bash -n scripts/resolve-service.sh && echo "scripts ok"
+      - cd ansible && ansible-playbook --syntax-check -i inventory.ini.example playbooks/site.yml >/dev/null && echo "ansible ok"
 
   # ------------------------------------------------------------------- nodes
 

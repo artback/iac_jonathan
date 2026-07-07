@@ -9,4 +9,7 @@
 vars/*
 !vars/*.example.hcl
 
+# Real inventory may contain a Tailscale auth key.
+ansible/inventory.ini
+
 dashboard/
