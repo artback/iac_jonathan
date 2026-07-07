@@ -1,0 +1,235 @@
+{
+  "name": "Email job applications",
+  "versionId": "b7e2c9d4-5a31-4f60-9e8b-2f1d3c4a5e6f",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "mailbox": "INBOX",
+        "postProcessAction": "read",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Email Trigger (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [-380, -160],
+      "notesInFlow": true,
+      "notes": "RECONSTRUCTED after data loss - re-select IMAP credential, verify mailbox"
+    },
+    {
+      "parameters": {
+        "mailbox": "INBOX",
+        "postProcessAction": "read",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Inbox",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [-380, 20],
+      "notesInFlow": true,
+      "notes": "RECONSTRUCTED - re-select IMAP credential, verify mailbox name"
+    },
+    {
+      "parameters": {
+        "mailbox": "Buy Sell",
+        "postProcessAction": "read",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Buy Sell",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [-380, 200],
+      "notesInFlow": true,
+      "notes": "RECONSTRUCTED - re-select IMAP credential, verify mailbox name"
+    },
+    {
+      "parameters": {
+        "mailbox": "Job Applications",
+        "postProcessAction": "read",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Job Applications",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [-380, 380],
+      "notesInFlow": true,
+      "notes": "RECONSTRUCTED - re-select IMAP credential, verify mailbox name"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// RECONSTRUCTED PLACEHOLDER - the original code was lost with the database.\n// Original purpose (from logs): filter and normalize incoming email data\n// before categorization. Adjust to your needs.\nreturn items.map((item) => {\n  const j = item.json;\n  const subject = (j.subject || '').trim();\n  const text = (j.textPlain || j.textHtml || '').trim();\n  const from = j.from?.value?.[0]?.address || j.from || '';\n\n  // TODO: restore your original categorization logic\n  const lower = `${subject}\\n${text}`.toLowerCase();\n  let category = 'other';\n  if (/(job|application|interview|recruit|position|role)/.test(lower)) category = 'job_application';\n  else if (/(order|shipment|delivery|invoice|receipt)/.test(lower)) category = 'online_order';\n\n  return { json: { from, subject, text: text.slice(0, 4000), category } };\n});"
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Filter and normalize email data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-120, 110]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "job_application",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Job application"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "online_order",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Online order"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [120, 110]
+    },
+    {
+      "parameters": {
+        "promptType": "auto",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "RECONSTRUCTED PLACEHOLDER - original prompt lost. Purpose: analyze a job-application-related email and decide/summarize. Restore your original instructions here."
+            }
+          ]
+        },
+        "needsFallback": true
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "LLM job application filter",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [420, -40]
+    },
+    {
+      "parameters": {
+        "promptType": "auto",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "RECONSTRUCTED PLACEHOLDER - original prompt lost. Purpose: analyze an online-order-related email. Restore your original instructions here."
+            }
+          ]
+        },
+        "needsFallback": true
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Online order LLM",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [420, 260]
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [340, 120],
+      "notesInFlow": true,
+      "notes": "Re-select Gemini credential"
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "a1000000-0000-4000-8000-000000000010",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [500, 120],
+      "notesInFlow": true,
+      "notes": "Fallback model - re-select OpenRouter credential"
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "a1000000-0000-4000-8000-000000000011",
+      "name": "Google Gemini Chat Model1",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [340, 420],
+      "notesInFlow": true,
+      "notes": "Re-select Gemini credential"
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "a1000000-0000-4000-8000-000000000012",
+      "name": "OpenRouter Chat Model1",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [500, 420],
+      "notesInFlow": true,
+      "notes": "Fallback model - re-select OpenRouter credential"
+    }
+  ],
+  "connections": {
+    "Email Trigger (IMAP)": {
+      "main": [[{ "node": "Filter and normalize email data", "type": "main", "index": 0 }]]
+    },
+    "Inbox": {
+      "main": [[{ "node": "Filter and normalize email data", "type": "main", "index": 0 }]]
+    },
+    "Buy Sell": {
+      "main": [[{ "node": "Filter and normalize email data", "type": "main", "index": 0 }]]
+    },
+    "Job Applications": {
+      "main": [[{ "node": "Filter and normalize email data", "type": "main", "index": 0 }]]
+    },
+    "Filter and normalize email data": {
+      "main": [[{ "node": "Switch", "type": "main", "index": 0 }]]
+    },
+    "Switch": {
+      "main": [
+        [{ "node": "LLM job application filter", "type": "main", "index": 0 }],
+        [{ "node": "Online order LLM", "type": "main", "index": 0 }]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [[{ "node": "LLM job application filter", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [[{ "node": "LLM job application filter", "type": "ai_languageModel", "index": 1 }]]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [[{ "node": "Online order LLM", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "OpenRouter Chat Model1": {
+      "ai_languageModel": [[{ "node": "Online order LLM", "type": "ai_languageModel", "index": 1 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": { "instanceId": "recovered" },
+  "tags": []
+}
