@@ -1,0 +1,89 @@
+version: '3'
+
+# Cluster access: mTLS client certs are fetched to ~/.config/homelab/certs
+# (see README "Prerequisites"). Everything below assumes them.
+env:
+  NOMAD_ADDR: https://100.116.81.88:4646
+  NOMAD_CACERT: '{{env "HOME"}}/.config/homelab/certs/nomad-ca.pem'
+  NOMAD_CLIENT_CERT: '{{env "HOME"}}/.config/homelab/certs/nomad-cli.pem'
+  NOMAD_CLIENT_KEY: '{{env "HOME"}}/.config/homelab/certs/nomad-cli-key.pem'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  # ---------------------------------------------------------------- services
+
+  new:service:
+    desc: 'Scaffold a vars file for a new service. Usage: task new:service NAME=whoami IMAGE=traefik/whoami PORT=80 [PREFIX=/whoami]'
+    requires:
+      vars: [NAME, IMAGE, PORT]
+    cmds:
+      - ./scripts/new-service.sh '{{.NAME}}' '{{.IMAGE}}' '{{.PORT}}' '{{.PREFIX | default ""}}'
+
+  plan:
+    desc: 'Dry-run a service deploy. Usage: task plan SERVICE=whoami [PACK=generic]'
+    requires:
+      vars: [SERVICE]
+    cmds:
+      - |
+        eval "$(./scripts/resolve-service.sh '{{.SERVICE}}' '{{.PACK | default ""}}')"
+        nomad-pack plan "packs/$PACK" $VAR_FLAG
+
+  deploy:
+    desc: 'Deploy a service. Usage: task deploy SERVICE=whoami [PACK=generic]'
+    requires:
+      vars: [SERVICE]
+    cmds:
+      - |
+        eval "$(./scripts/resolve-service.sh '{{.SERVICE}}' '{{.PACK | default ""}}')"
+        nomad-pack run "packs/$PACK" $VAR_FLAG
+
+  render:
+    desc: 'Print the rendered job spec without deploying. Usage: task render SERVICE=whoami'
+    requires:
+      vars: [SERVICE]
+    cmds:
+      - |
+        eval "$(./scripts/resolve-service.sh '{{.SERVICE}}' '{{.PACK | default ""}}')"
+        nomad-pack render "packs/$PACK" $VAR_FLAG
+
+  stop:
+    desc: 'Stop and remove a service. Usage: task stop SERVICE=whoami'
+    requires:
+      vars: [SERVICE]
+    cmds:
+      - |
+        eval "$(./scripts/resolve-service.sh '{{.SERVICE}}' '{{.PACK | default ""}}')"
+        nomad-pack destroy "packs/$PACK" $VAR_FLAG
+
+  # ------------------------------------------------------------------ status
+
+  status:
+    desc: Show all jobs on the cluster
+    cmds:
+      - nomad job status
+
+  nodes:
+    desc: Show cluster nodes
+    cmds:
+      - nomad node status
+
+  # ------------------------------------------------------------------- nodes
+
+  node:ping:
+    desc: Ansible ping all inventory hosts
+    dir: ansible
+    cmds:
+      - ansible all -i inventory.ini -m ping
+
+  node:provision:
+    desc: 'Provision a node (new or existing). Usage: task node:provision HOST=100.x.y.z (or HOST=all)'
+    requires:
+      vars: [HOST]
+    dir: ansible
+    cmds:
+      - ansible-playbook -i inventory.ini playbooks/site.yml --limit '{{.HOST}}'

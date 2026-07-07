@@ -4,5 +4,9 @@
 *.ipr
 *iml
 
-vars/
+# Service vars may contain secrets (DB passwords etc.) — keep untracked,
+# but allow examples through.
+vars/*
+!vars/*.example.hcl
+
 dashboard/
