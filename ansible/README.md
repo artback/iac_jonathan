@@ -45,6 +45,26 @@ By default, the configuration assumes you are using **Tailscale**.
 | `nomad_client_enabled` | `true` | Set to `false` for server-only nodes. |
 | `nomad_consul_address` | `127.0.0.1:8500` | Address of the local Consul agent. |
 
+### Versions, Architecture & Safety Flags
+
+Both the `consul` and `nomad` roles:
+
+- **Pin a version** (`consul_version`, `nomad_version`) matching the live
+  cluster, and **auto-detect the CPU architecture** (amd64/arm64/arm) — so the
+  same playbook provisions a Raspberry Pi and an x86 VM.
+- **Skip the download when the pinned version is already installed**, so
+  re-runs are fast and can't downgrade a node that matches the pin.
+- Honor per-host safety flags for hand-managed nodes:
+
+| Flag | Effect |
+| :--- | :--- |
+| `nomad_skip_install=true` / `consul_skip_install=true` | Never touch the installed binary. |
+| `nomad_manage_config=false` / `consul_manage_config=false` | Never rewrite `/etc/{nomad,consul}.d/*.hcl` or the systemd unit. |
+
+The original Pi (100.116.81.88) carries all four flags in the inventory
+because its on-disk config was hand-tuned for mTLS and is **not** what these
+templates render. Don't remove them.
+
 ## Usage
 
 ### 1. Prerequisites

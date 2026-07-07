@@ -1,8 +1,19 @@
 ---
+# Consul doesn't reliably send systemd READY=1 on restart, so a synchronous
+# `service: restarted` can time out even though Consul is healthy. Fire the
+# restart async and wait for the HTTP port instead.
 - name: Restart Consul
-  ansible.builtin.service:
-    name: consul
-    state: restarted
+  ansible.builtin.command: systemctl restart consul
+  async: 60
+  poll: 0
+  when: ansible_os_family == "Debian"
+  notify: Wait for Consul HTTP
+
+- name: Wait for Consul HTTP
+  ansible.builtin.wait_for:
+    port: 8500
+    host: 127.0.0.1
+    timeout: 60
   when: ansible_os_family == "Debian"
 
 - name: Restart Consul macOS

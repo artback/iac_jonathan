@@ -1,4 +1,21 @@
 ---
+# Version to install. Matches the live cluster — bump deliberately, and never
+# below what a node already runs (install is skipped when versions match, see
+# tasks/linux.yml).
+consul_version: "1.22.7"
+
+# Map ansible_architecture to HashiCorp release arch names.
+consul_arch_map:
+  x86_64: "amd64"
+  aarch64: "arm64"
+  armv7l: "arm"
+consul_arch: "{{ consul_arch_map[ansible_architecture] | default('amd64') }}"
+
+# Safety switches for already-hand-managed nodes (e.g. the original Pi whose
+# on-disk config predates these templates — see inventory host vars).
+consul_skip_install: false   # true = never touch the binary
+consul_manage_config: true   # false = never rewrite /etc/consul.d/consul.hcl
+
 consul_datacenter: "kalmar"
 consul_data_dir: "/opt/consul"
 consul_ui_enabled: true
@@ -6,7 +23,7 @@ consul_server_enabled: true
 consul_bootstrap_expect: 1
 consul_bind_interface: "tailscale0"
 consul_advertise_interface: "tailscale0"
-# IP or address to join the cluster. 
+# IP or address to join the cluster.
 # In a new cluster, the first node is the server, subsequent nodes join it.
-consul_retry_join_ips: 
+consul_retry_join_ips:
   - "100.116.81.88"

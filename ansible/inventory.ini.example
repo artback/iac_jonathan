@@ -1,42 +1,43 @@
-# Ansible Inventory Example
-# Rename this file to 'inventory.ini' and update with your IPs.
+# Ansible Inventory — copy to 'inventory.ini' and adjust.
+#
+# Topology: one (or 3/5) server node(s) running Consul+Nomad in server mode,
+# any number of client nodes running workloads. All traffic over Tailscale.
+#
+# To add a new node:
+#   1. Flash the OS, enable SSH, join it to Tailscale (or set
+#      tailscale_auth_key below and let Ansible do it).
+#   2. Add its Tailscale IP under [clients].
+#   3. Run: task node:provision HOST=<ip>
 
 [servers]
-# These nodes will manage the cluster state (Raft consensus)
-# Recommended: 1, 3, or 5 servers for HA.
-192.168.1.10
+# The original Pi 5 — already hand-configured with mTLS, so Ansible must not
+# rewrite its config or touch its binaries (see homelab gotchas).
+100.116.81.88 ansible_user=dwight nomad_skip_install=true consul_skip_install=true nomad_manage_config=false consul_manage_config=false
 
 [clients]
-# These nodes will run your actual workloads (Docker containers)
-192.168.1.20
-192.168.1.21
-# Example of a Mac client
-192.168.1.30 ansible_user=jonathan
+# New worker nodes go here — Tailscale IPs, one per line:
+# 100.x.y.z ansible_user=dwight
 
 [all:children]
 servers
 clients
 
 [all:vars]
-# SSH Configuration
-ansible_user=ubuntu
+ansible_user=dwight
 # ansible_ssh_private_key_file=~/.ssh/id_rsa
 
-# --- Network Configuration ---
-# If you are NOT using Tailscale, you must override these interfaces!
-# For typical LAN (WiFi/Ethernet), set them to 'eth0' (Linux) or 'en0' (Mac).
-# consul_bind_interface=eth0
-# nomad_bind_interface=eth0
-# nomad_network_interface=eth0
+# --- Network ---
+# Cluster binds to Tailscale by default. If a node is NOT on Tailscale,
+# override the interfaces per-host: consul_bind_interface=eth0 etc.
 
-# Tailscale Auth Key (Only required if you want Ansible to install/auth Tailscale)
+# Tailscale auth key — only needed when Ansible should join new nodes itself.
+# Generate at https://login.tailscale.com/admin/settings/keys
 # tailscale_auth_key=tskey-auth-xxxxx
 
-# --- Role Configuration ---
 [servers:vars]
 consul_server_enabled=true
 nomad_server_enabled=true
-nomad_client_enabled=false 
+nomad_client_enabled=true
 
 [clients:vars]
 consul_server_enabled=false

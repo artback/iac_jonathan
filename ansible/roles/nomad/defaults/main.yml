@@ -1,4 +1,21 @@
 ---
+# Version to install. Matches the live cluster — bump deliberately, and never
+# below what a node already runs (install is skipped when versions match, see
+# tasks/linux.yml).
+nomad_version: "2.0.2"
+
+# Map ansible_architecture to HashiCorp release arch names.
+nomad_arch_map:
+  x86_64: "amd64"
+  aarch64: "arm64"
+  armv7l: "arm"
+nomad_arch: "{{ nomad_arch_map[ansible_architecture] | default('amd64') }}"
+
+# Safety switches for already-hand-managed nodes (e.g. the original Pi whose
+# on-disk config predates these templates — see inventory host vars).
+nomad_skip_install: false   # true = never touch the binary
+nomad_manage_config: true   # false = never rewrite /etc/nomad.d/nomad.hcl
+
 nomad_region: "europe"
 nomad_datacenter: "kalmar"
 nomad_data_dir: "/opt/nomad/data"
@@ -9,6 +26,7 @@ nomad_network_interface: "tailscale0"
 nomad_bind_interface: "tailscale0"
 nomad_acl_enabled: false
 # Address of the Consul agent (usually local if Consul is on the same node)
-nomad_consul_address: "127.0.0.1:8500" 
-# If utilizing the specific IP mentioned previously:
-# nomad_consul_address: "100.116.81.88:8500"
+nomad_consul_address: "127.0.0.1:8500"
+# Extra Nomad servers to join (only used when nomad_server_enabled). Clients
+# discover servers automatically through Consul.
+nomad_server_join_ips: []

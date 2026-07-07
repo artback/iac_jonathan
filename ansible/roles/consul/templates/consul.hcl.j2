@@ -15,3 +15,8 @@ bind_addr = "{{ '{{' }} GetInterfaceIP "{{ consul_bind_interface }}" {{ '}}' }}"
 advertise_addr = "{{ '{{' }} GetInterfaceIP "{{ consul_advertise_interface }}" {{ '}}' }}"
 
 retry_join = {{ consul_retry_join_ips | to_json }}
+
+# Without this, a server offline for >168h refuses to start ("refusing to
+# rejoin cluster...") and crash-loops — fatal for a single-server homelab
+# that can sit powered off for weeks.
+server_rejoin_age_max = "87600h"
