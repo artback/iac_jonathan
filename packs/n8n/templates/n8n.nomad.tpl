@@ -77,6 +77,10 @@ job "n8n" {
             # n8n can't live under a stripped subpath, so it gets its own port.
             N8N_EDITOR_BASE_URL="[[ var "public_url" . ]]"
             WEBHOOK_URL="[[ var "public_url" . ]]"
+            # Behind one proxy hop (Tailscale Serve). Without this, express
+            # rejects X-Forwarded-For and login/setup requests fail with
+            # rate-limiter ValidationErrors.
+            N8N_PROXY_HOPS=1
 
             DB_TYPE="[[ var "db_type" . ]]"
             DB_POSTGRESDB_DATABASE="[[ var "db_postgresdb_database" . ]]"
