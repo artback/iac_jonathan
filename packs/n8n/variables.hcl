@@ -1,7 +1,7 @@
 variable "datacenters" {
   description = "The datacenters where the job should run."
   type        = list(string)
-  default     = ["dc1"]
+  default     = ["kalmar"]
 }
 
 variable "count" {
@@ -41,9 +41,15 @@ variable "volume_id" {
 }
 
 variable "n8n_tags" {
-  description = "The tags for the n8n service."
+  description = "The tags for the n8n service. No urlprefix by design: n8n does not work behind a stripped subpath (editor assets, websockets, and webhook URLs assume it serves at the root) — it is exposed on its own Tailscale Serve HTTPS port instead, see public_url."
   type        = list(string)
-  default     = ["urlprefix-/n8n"]
+  default     = ["n8n"]
+}
+
+variable "public_url" {
+  description = "Public base URL n8n is reached at (Tailscale Serve HTTPS port proxying to the n8n host port). Used for the editor base URL and generated webhook URLs."
+  type        = string
+  default     = "https://raspberrypi.tailb9a8bb.ts.net:8443/"
 }
 
 variable "generic_timezone" {
