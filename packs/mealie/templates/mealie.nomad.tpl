@@ -68,6 +68,16 @@ job "mealie" {
       config {
         image = "ghcr.io/mealie-recipes/mealie:[[ var "mealie_version" . ]]"
         ports = ["http"]
+
+        # Named volume for recipe images. Without this the image's VOLUME
+        # directive creates a fresh anonymous volume per deploy and the
+        # images are silently abandoned. mount block, not volumes shorthand
+        # (relative volumes source = ephemeral alloc-dir path).
+        mount {
+          type   = "volume"
+          target = "/app/data"
+          source = "[[ var "mealie_data_volume" . ]]"
+        }
       }
 
       template {

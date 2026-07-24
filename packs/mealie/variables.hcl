@@ -50,6 +50,12 @@ variable "db_postgresdb_database" {
   default     = "mealie"
 }
 
+variable "mealie_data_volume" {
+  description = "The docker named volume for /app/data (recipe images etc)."
+  type        = string
+  default     = "mealie_data"
+}
+
 variable "service_tags" {
   description = "The tags for the mealie service."
   type        = list(string)
