@@ -17,6 +17,8 @@ client {
 
 plugin "docker" {
   config {
+    # Required by the beszel agent for S.M.A.R.T. disk monitoring
+    allow_privileged = true
     volumes {
       enabled = true
     }
