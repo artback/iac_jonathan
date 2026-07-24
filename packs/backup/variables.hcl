@@ -37,8 +37,9 @@ variable "app_state_paths" {
   description = "Host paths of docker volume data to include in the app-state tarball, as name=path."
   type        = map(string)
   default = {
-    n8n    = "/var/lib/docker/volumes/n8n_data/_data"
-    mealie = "/var/lib/docker/volumes/mealie_data/_data"
-    beszel = "/var/lib/docker/volumes/beszel_vol/_data"
+    n8n             = "/var/lib/docker/volumes/n8n_data/_data"
+    mealie          = "/var/lib/docker/volumes/mealie_data/_data"
+    beszel          = "/var/lib/docker/volumes/beszel_vol/_data"
+    changedetection = "/var/lib/docker/volumes/datastore-volume/_data"
   }
 }
