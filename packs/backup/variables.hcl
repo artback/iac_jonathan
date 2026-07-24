@@ -1,0 +1,44 @@
+variable "datacenters" {
+  description = "The datacenters where the job should run."
+  type        = list(string)
+  default     = ["kalmar"]
+}
+
+variable "cron" {
+  description = "Backup schedule (UTC)."
+  type        = string
+  default     = "0 3 * * *"
+}
+
+variable "pg_user" {
+  description = "The postgres superuser for pg_dumpall."
+  type        = string
+  default     = "postgres"
+}
+
+variable "pg_password" {
+  description = "The postgres superuser password (secret — set in vars file)."
+  type        = string
+}
+
+variable "local_backup_dir" {
+  description = "Backup destination on the NVMe (same disk as the data — first copy)."
+  type        = string
+  default     = "/home/dwight/backups"
+}
+
+variable "usb_backup_dir" {
+  description = "Backup destination on the USB drive (separate physical disk — second copy)."
+  type        = string
+  default     = "/mnt/usbdrive/backups"
+}
+
+variable "app_state_paths" {
+  description = "Host paths of docker volume data to include in the app-state tarball, as name=path."
+  type        = map(string)
+  default = {
+    n8n    = "/var/lib/docker/volumes/n8n_data/_data"
+    mealie = "/var/lib/docker/volumes/mealie_data/_data"
+    beszel = "/var/lib/docker/volumes/beszel_vol/_data"
+  }
+}
