@@ -41,5 +41,6 @@ variable "app_state_paths" {
     mealie          = "/var/lib/docker/volumes/mealie_data/_data"
     beszel          = "/var/lib/docker/volumes/beszel_vol/_data"
     changedetection = "/var/lib/docker/volumes/datastore-volume/_data"
+    convertx        = "/home/dwight/convertx"
   }
 }
