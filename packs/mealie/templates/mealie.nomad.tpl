@@ -8,7 +8,8 @@ job "mealie" {
     network {
       mode = "bridge"
       port "http" {
-        to = 9000
+        static = 9000
+        to     = 9000
       }
     }
 
