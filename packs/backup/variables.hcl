@@ -42,5 +42,8 @@ variable "app_state_paths" {
     beszel          = "/var/lib/docker/volumes/beszel_vol/_data"
     changedetection = "/var/lib/docker/volumes/datastore-volume/_data"
     convertx        = "/home/dwight/convertx"
+    searxng         = "/var/lib/docker/volumes/searxng_data/_data"
+    abs-config      = "/var/lib/docker/volumes/abs_config/_data"
+    abs-metadata    = "/var/lib/docker/volumes/abs_metadata/_data"
   }
 }
