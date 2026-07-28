@@ -204,6 +204,72 @@
         }
 
         .card:hover .port-tag { opacity: 1; }
+
+        .web-search-form {
+            position: relative;
+            margin-bottom: 32px;
+        }
+
+        .web-search-form .search-icon { color: #3050ff; }
+
+        .web-search-input {
+            width: 100%;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 14px 18px 14px 44px;
+            color: var(--text-color);
+            font-family: inherit;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        .web-search-input:focus {
+            outline: none;
+            border-color: #3050ff;
+            box-shadow: 0 0 0 2px rgba(48, 80, 255, 0.25);
+        }
+
+        .news-section { margin-top: 40px; }
+
+        .news-section h2 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .news-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .news-item {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: background var(--transition-speed);
+        }
+
+        .news-item:hover { background: var(--hover-bg); }
+
+        .news-item .news-title {
+            color: var(--text-color);
+            font-size: 0.95rem;
+            flex-grow: 1;
+        }
+
+        .news-item .news-meta {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            white-space: nowrap;
+            font-family: 'Menlo', 'Monaco', monospace;
+        }
     </style>
 </head>
 <body>
@@ -221,7 +287,18 @@
                 <input type="text" id="search-input" class="search-input" placeholder="Search services...">
             </div>
         </header>
+        <form class="web-search-form" action="http://100.116.81.88:8888/search" method="get">
+            <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" name="q" class="web-search-input" placeholder="Search the web with SearXNG…" autocomplete="off">
+        </form>
         <div id="service-grid"></div>
+        <div class="news-section" id="news-section" hidden>
+            <h2>Latest from your feeds</h2>
+            <div class="news-list" id="news-list"></div>
+        </div>
     </div>
 
     <script>
@@ -230,7 +307,7 @@
             { name: "n8n", port: 5678, logo: "https://cdn.simpleicons.org/n8n/ffffff", url: "http://100.116.81.88:5678", category: "automation" },
             { name: "Fabio", port: 9999, logo: "https://cdn.simpleicons.org/consul/F24C53", url: "https://raspberrypi.tailb9a8bb.ts.net/fabio", category: "infrastructure" },
             { name: "Mealie", port: 9000, logo: "https://cdn.simpleicons.org/mealie/E58325", url: "http://100.116.81.88:9000", category: "apps" },
-            { name: "Miniflux", port: 8081, logo: "https://cdn.simpleicons.org/miniflux/2f4858", url: "http://100.116.81.88:8081", category: "apps" },
+            { name: "Miniflux", port: 8081, logo: "https://cdn.simpleicons.org/rss/E58325", url: "http://100.116.81.88:8081", category: "apps" },
             { name: "SearXNG", port: 8888, logo: "https://cdn.simpleicons.org/searxng/3050ff", url: "http://100.116.81.88:8888", category: "apps" },
             { name: "Audiobookshelf", port: 13378, logo: "https://cdn.simpleicons.org/audiobookshelf/82612C", url: "http://100.116.81.88:13378", category: "media" },
             { name: "Selenium", port: 4444, logo: "https://cdn.simpleicons.org/selenium/43B02A", url: "https://raspberrypi.tailb9a8bb.ts.net/selenium", category: "infrastructure" },
@@ -317,6 +394,39 @@
 
         searchInput.addEventListener('input', (e) => renderServices(e.target.value));
         renderServices();
+
+        // Latest entries via the dashboard's nginx proxy (API key stays server-side)
+        function relTime(iso) {
+            const mins = Math.round((Date.now() - new Date(iso)) / 60000);
+            if (mins < 60) return mins + "m";
+            if (mins < 1440) return Math.round(mins / 60) + "h";
+            return Math.round(mins / 1440) + "d";
+        }
+
+        fetch('/api/miniflux/entries?order=published_at&direction=desc&limit=12')
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(data => {
+                const entries = data.entries || [];
+                if (!entries.length) return;
+                const list = document.getElementById('news-list');
+                for (const e of entries) {
+                    const a = document.createElement('a');
+                    a.className = 'news-item';
+                    a.href = e.url;
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    const title = document.createElement('span');
+                    title.className = 'news-title';
+                    title.textContent = e.title;
+                    const meta = document.createElement('span');
+                    meta.className = 'news-meta';
+                    meta.textContent = (e.feed?.title || '') + ' · ' + relTime(e.published_at);
+                    a.append(title, meta);
+                    list.appendChild(a);
+                }
+                document.getElementById('news-section').hidden = false;
+            })
+            .catch(() => {});
     </script>
 </body>
 </html>
