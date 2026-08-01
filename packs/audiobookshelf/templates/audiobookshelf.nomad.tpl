@@ -45,7 +45,8 @@ job "audiobookshelf" {
 
       resources {
         cpu    = 500
-        memory = 512
+        memory     = 256
+        memory_max = 512
       }
 
       service {

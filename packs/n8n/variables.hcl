@@ -1,7 +1,7 @@
 variable "datacenters" {
   description = "The datacenters where the job should run."
   type        = list(string)
-  default     = ["dc1"]
+  default     = ["kalmar"]
 }
 
 variable "count" {
@@ -19,7 +19,7 @@ variable "port" {
 variable "image" {
   description = "The Docker image to use."
   type        = string
-  default     = "docker.n8n.io/n8nio/n8n"
+  default     = "docker.n8n.io/n8nio/n8n:2.1.4"
 }
 
 variable "cpu" {

@@ -112,7 +112,8 @@ job "mealie" {
 
       resources {
         cpu    = 500
-        memory = 1000
+        memory     = 400
+        memory_max = 1000
       }
 
       service {

@@ -35,7 +35,8 @@ job "selenium" {
 
       resources {
         cpu    = 500
-        memory = 1024
+        memory     = 256
+        memory_max = 1024
       }
 
       service {

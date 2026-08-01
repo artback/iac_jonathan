@@ -41,7 +41,8 @@ job "searxng" {
 
       resources {
         cpu    = 300
-        memory = 512
+        memory     = 256
+        memory_max = 512
       }
 
       service {

@@ -40,7 +40,8 @@ job "beszel" {
 
       resources {
         cpu    = 200
-        memory = 256
+        memory     = 128
+        memory_max = 256
       }
 
       service {
@@ -107,7 +108,8 @@ job "beszel" {
 
       resources {
         cpu    = 200
-        memory = 256
+        memory     = 128
+        memory_max = 256
       }
     }
   }

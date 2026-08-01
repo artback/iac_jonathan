@@ -58,7 +58,8 @@ job "n8n" {
       }
       resources {
         cpu    = [[ var "cpu" . ]]
-        memory = [[ var "memory" . ]] # Now it uses the 1024MB from above
+        memory     = [[ var "memory" . ]]
+        memory_max = 1024
       }
 
       template {
