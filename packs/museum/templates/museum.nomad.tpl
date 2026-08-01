@@ -51,9 +51,18 @@ job "museum" {
       config {
         image = "[[ var "pg_image" . ]]"
         ports = ["db"]
-        volumes = [
-          "[[ var "pg_volume" . ]]:/var/lib/postgresql/data",
-        ]
+        # A mount stanza, not a "name:/path" entry in volumes. The docker
+        # driver resolves a non-absolute source in volumes against the
+        # allocation directory rather than as a Docker named volume, so
+        # "[[ var "pg_volume" . ]]:/var/lib/postgresql/data" silently became a
+        # per-allocation scratch directory: it survived task restarts, and
+        # was destroyed the moment a deploy replaced the allocation. That is
+        # how the first CD run emptied the catalogue.
+        mount {
+          type   = "volume"
+          source = "[[ var "pg_volume" . ]]"
+          target = "/var/lib/postgresql/data"
+        }
       }
 
       env {
@@ -122,9 +131,18 @@ job "museum" {
       config {
         image = "[[ var "kafka_image" . ]]"
         ports = ["kafka"]
-        volumes = [
-          "[[ var "kafka_volume" . ]]:/var/lib/kafka/data",
-        ]
+        # A mount stanza, not a "name:/path" entry in volumes. The docker
+        # driver resolves a non-absolute source in volumes against the
+        # allocation directory rather than as a Docker named volume, so
+        # "[[ var "kafka_volume" . ]]:/var/lib/kafka/data" silently became a
+        # per-allocation scratch directory: it survived task restarts, and
+        # was destroyed the moment a deploy replaced the allocation. That is
+        # how the first CD run emptied the catalogue.
+        mount {
+          type   = "volume"
+          source = "[[ var "kafka_volume" . ]]"
+          target = "/var/lib/kafka/data"
+        }
       }
 
       env {
@@ -286,9 +304,18 @@ job "museum" {
         image = "[[ var "minio_image" . ]]"
         ports = ["api", "console"]
         args  = ["server", "/data", "--console-address", ":9001"]
-        volumes = [
-          "[[ var "minio_volume" . ]]:/data",
-        ]
+        # A mount stanza, not a "name:/path" entry in volumes. The docker
+        # driver resolves a non-absolute source in volumes against the
+        # allocation directory rather than as a Docker named volume, so
+        # "[[ var "minio_volume" . ]]:/data" silently became a
+        # per-allocation scratch directory: it survived task restarts, and
+        # was destroyed the moment a deploy replaced the allocation. That is
+        # how the first CD run emptied the catalogue.
+        mount {
+          type   = "volume"
+          source = "[[ var "minio_volume" . ]]"
+          target = "/data"
+        }
       }
 
       env {
