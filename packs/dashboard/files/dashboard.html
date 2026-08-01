@@ -126,12 +126,57 @@
         main {
             max-width: 1240px;
             margin: 0 auto;
-            padding: 28px 32px 64px;
+            padding: 20px 32px 64px;
             display: grid;
             grid-template-columns: minmax(0, 1fr) 320px;
             gap: 40px;
             align-items: start;
         }
+
+        .stats-strip {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .stat {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 7px 12px;
+        }
+
+        .stat .label {
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--muted);
+        }
+
+        .stat .value {
+            font-family: var(--mono);
+            font-variant-numeric: tabular-nums;
+            font-size: 0.8rem;
+            color: var(--text);
+        }
+
+        .stat[data-level="warn"] .value { color: #E8B45A; }
+        .stat[data-level="crit"] .value { color: #E86A6A; }
+
+        .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: var(--border);
+        }
+
+        .dot[data-state="up"] { background: #4ADE80; }
+        .dot[data-state="down"] { background: #F87171; box-shadow: 0 0 6px rgba(248,113,113,0.6); }
 
         .category { margin-bottom: 28px; }
 
@@ -342,6 +387,14 @@
     </div>
 
     <main>
+        <div class="stats-strip" id="stats-strip" hidden>
+            <div class="stat" id="stat-services"><span class="label">Services</span><span class="value">—</span></div>
+            <div class="stat" id="stat-cpu"><span class="label">CPU</span><span class="value">—</span></div>
+            <div class="stat" id="stat-mem"><span class="label">Memory</span><span class="value">—</span></div>
+            <div class="stat" id="stat-disk"><span class="label">Disk</span><span class="value">—</span></div>
+            <div class="stat" id="stat-temp"><span class="label">Temp</span><span class="value">—</span></div>
+            <div class="stat" id="stat-uptime"><span class="label">Uptime</span><span class="value">—</span></div>
+        </div>
         <section id="services"></section>
         <aside>
             <div class="rail-head">
@@ -356,20 +409,20 @@
 
     <script>
         const services = [
-            { name: "Postgres", port: 5432, logo: "https://cdn.simpleicons.org/postgresql/4169E1", url: "https://raspberrypi.tailb9a8bb.ts.net/postgres", category: "infrastructure" },
-            { name: "n8n", port: 5678, logo: "https://cdn.simpleicons.org/n8n/ffffff", url: "http://100.116.81.88:5678", category: "automation" },
-            { name: "Fabio", port: 9999, logo: "https://cdn.simpleicons.org/consul/F24C53", url: "https://raspberrypi.tailb9a8bb.ts.net/fabio", category: "infrastructure" },
-            { name: "Mealie", port: 9000, logo: "https://cdn.simpleicons.org/mealie/E58325", url: "http://100.116.81.88:9000", category: "apps" },
-            { name: "Miniflux", port: 8081, logo: "https://cdn.simpleicons.org/rss/E58325", url: "http://100.116.81.88:8081", category: "apps" },
-            { name: "SearXNG", port: 8888, logo: "https://cdn.simpleicons.org/searxng/3050ff", url: "http://100.116.81.88:8888", category: "apps" },
-            { name: "Audiobookshelf", port: 13378, logo: "https://cdn.simpleicons.org/audiobookshelf/82612C", url: "http://100.116.81.88:13378", category: "media" },
-            { name: "Selenium", port: 4444, logo: "https://cdn.simpleicons.org/selenium/43B02A", url: "https://raspberrypi.tailb9a8bb.ts.net/selenium", category: "infrastructure" },
-            { name: "ChangeDetection", port: 5000, logo: "https://cdn.simpleicons.org/opensourceinitiative/3056d3", url: "http://100.116.81.88:5000", category: "apps" },
-            { name: "Beszel", port: 8090, logo: "https://cdn.simpleicons.org/lightning/38bdf8", url: "http://100.116.81.88:8090", category: "monitoring" },
-            { name: "ConvertX", port: 5005, logo: "https://cdn.simpleicons.org/convertio/4ade80", url: "http://100.116.81.88:5005", category: "apps" },
-            { name: "Nomad API", port: 3000, logo: "", url: "https://raspberrypi.tailb9a8bb.ts.net/nomad-api", category: "apps" },
-            { name: "Prometheus", port: 9090, logo: "https://cdn.simpleicons.org/prometheus/E6522C", url: "https://raspberrypi.tailb9a8bb.ts.net/prometheus", category: "monitoring" },
-            { name: "Node-Exporter", port: 9100, logo: "https://cdn.simpleicons.org/prometheus/E6522C", url: "https://raspberrypi.tailb9a8bb.ts.net/node-exporter", category: "monitoring" },
+            { name: "Postgres", svc: "postgres", port: 5432, logo: "https://cdn.simpleicons.org/postgresql/4169E1", url: "https://raspberrypi.tailb9a8bb.ts.net/postgres", category: "infrastructure" },
+            { name: "n8n", svc: "n8n", port: 5678, logo: "https://cdn.simpleicons.org/n8n/ffffff", url: "http://100.116.81.88:5678", category: "automation" },
+            { name: "Fabio", svc: "fabio", port: 9999, logo: "https://cdn.simpleicons.org/consul/F24C53", url: "https://raspberrypi.tailb9a8bb.ts.net/fabio", category: "infrastructure" },
+            { name: "Mealie", svc: "mealie", port: 9000, logo: "https://cdn.simpleicons.org/mealie/E58325", url: "http://100.116.81.88:9000", category: "apps" },
+            { name: "Miniflux", svc: "miniflux", port: 8081, logo: "https://cdn.simpleicons.org/rss/E58325", url: "http://100.116.81.88:8081", category: "apps" },
+            { name: "SearXNG", svc: "searxng", port: 8888, logo: "https://cdn.simpleicons.org/searxng/3050ff", url: "http://100.116.81.88:8888", category: "apps" },
+            { name: "Audiobookshelf", svc: "audiobookshelf", port: 13378, logo: "https://cdn.simpleicons.org/audiobookshelf/82612C", url: "http://100.116.81.88:13378", category: "media" },
+            { name: "Selenium", svc: "selenium", port: 4444, logo: "https://cdn.simpleicons.org/selenium/43B02A", url: "https://raspberrypi.tailb9a8bb.ts.net/selenium", category: "infrastructure" },
+            { name: "ChangeDetection", svc: "changedetection", port: 5000, logo: "https://cdn.simpleicons.org/opensourceinitiative/3056d3", url: "http://100.116.81.88:5000", category: "apps" },
+            { name: "Beszel", svc: "beszel", port: 8090, logo: "https://cdn.simpleicons.org/lightning/38bdf8", url: "http://100.116.81.88:8090", category: "monitoring" },
+            { name: "ConvertX", svc: "convertx", port: 5005, logo: "https://cdn.simpleicons.org/convertio/4ade80", url: "http://100.116.81.88:5005", category: "apps" },
+            { name: "Nomad API", svc: "nomad-api", port: 3000, logo: "", url: "https://raspberrypi.tailb9a8bb.ts.net/nomad-api", category: "apps" },
+            { name: "Prometheus", svc: "prometheus", port: 9090, logo: "https://cdn.simpleicons.org/prometheus/E6522C", url: "https://raspberrypi.tailb9a8bb.ts.net/prometheus", category: "monitoring" },
+            { name: "Node-Exporter", svc: "node-exporter", port: 9100, logo: "https://cdn.simpleicons.org/prometheus/E6522C", url: "https://raspberrypi.tailb9a8bb.ts.net/node-exporter", category: "monitoring" },
             { name: "Ultra.cc", port: null, logo: "https://cdn.simpleicons.org/cloudflare/2563eb", url: "https://ultra.cc", category: "external" },
             { name: "Radarr", port: null, logo: "https://cdn.simpleicons.org/radarr/FFC230", url: "https://seedking.nyx.usbx.me/radarr/", category: "media" },
             { name: "Sonarr", port: null, logo: "https://cdn.simpleicons.org/sonarr/2196F3", url: "https://seedking.nyx.usbx.me/sonarr/", category: "media" }
@@ -421,6 +474,12 @@
                 ext.className = 'ext';
                 ext.textContent = '↗';
                 a.appendChild(ext);
+            }
+            if (s.svc) {
+                const dot = document.createElement('span');
+                dot.className = 'dot';
+                dot.dataset.svc = s.svc;
+                a.appendChild(dot);
             }
             return a;
         }
@@ -540,6 +599,82 @@
                 const el = document.getElementById('news-empty');
                 if (el) el.textContent = 'Feeds unavailable right now.';
             });
+
+        // Service health dots via the consul proxy
+        function loadHealth() {
+            fetch('/api/health')
+                .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+                .then(list => {
+                    const byName = Object.fromEntries(list.map(s => [s.Name, s]));
+                    let up = 0, tracked = 0;
+                    document.querySelectorAll('.dot[data-svc]').forEach(dot => {
+                        const s = byName[dot.dataset.svc];
+                        if (!s) { dot.dataset.state = ''; return; }
+                        tracked++;
+                        const ok = (s.ChecksCritical || 0) === 0;
+                        if (ok) up++;
+                        dot.dataset.state = ok ? 'up' : 'down';
+                        dot.title = dot.dataset.svc + ': ' + s.ChecksPassing + ' passing' +
+                            (s.ChecksCritical ? ', ' + s.ChecksCritical + ' critical' : '');
+                    });
+                    setStat('stat-services', up + '/' + tracked,
+                        up === tracked ? '' : 'crit');
+                    document.getElementById('stats-strip').hidden = false;
+                })
+                .catch(() => {});
+        }
+
+        // Host stats via same-origin prometheus (through fabio)
+        function promQuery(q) {
+            return fetch('/prometheus/api/v1/query?query=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(d => parseFloat(d.data.result[0]?.value[1]));
+        }
+
+        function setStat(id, text, level) {
+            const el = document.getElementById(id);
+            el.querySelector('.value').textContent = text;
+            if (level !== undefined) el.dataset.level = level;
+        }
+
+        function levelFor(v, warn, crit) {
+            return v >= crit ? 'crit' : v >= warn ? 'warn' : '';
+        }
+
+        function loadStats() {
+            Promise.allSettled([
+                promQuery('100 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m]))*100'),
+                promQuery('(1 - node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes)*100'),
+                promQuery('(1 - node_filesystem_avail_bytes{mountpoint="/"}/node_filesystem_size_bytes{mountpoint="/"})*100'),
+                promQuery('max(node_thermal_zone_temp)'),
+                promQuery('(node_time_seconds - node_boot_time_seconds)/86400')
+            ]).then(([cpu, mem, disk, temp, uptime]) => {
+                let any = false;
+                if (cpu.status === 'fulfilled' && !isNaN(cpu.value)) {
+                    setStat('stat-cpu', cpu.value.toFixed(0) + '%', levelFor(cpu.value, 60, 85)); any = true;
+                }
+                if (mem.status === 'fulfilled' && !isNaN(mem.value)) {
+                    setStat('stat-mem', mem.value.toFixed(0) + '%', levelFor(mem.value, 70, 88)); any = true;
+                }
+                if (disk.status === 'fulfilled' && !isNaN(disk.value)) {
+                    setStat('stat-disk', disk.value.toFixed(0) + '%', levelFor(disk.value, 70, 88)); any = true;
+                }
+                if (temp.status === 'fulfilled' && !isNaN(temp.value)) {
+                    setStat('stat-temp', temp.value.toFixed(0) + '°C', levelFor(temp.value, 65, 78)); any = true;
+                }
+                if (uptime.status === 'fulfilled' && !isNaN(uptime.value)) {
+                    setStat('stat-uptime', uptime.value >= 1 ? uptime.value.toFixed(0) + 'd'
+                        : (uptime.value * 24).toFixed(0) + 'h');
+                    any = true;
+                }
+                if (any) document.getElementById('stats-strip').hidden = false;
+            });
+        }
+
+        loadHealth();
+        loadStats();
+        setInterval(loadHealth, 30000);
+        setInterval(loadStats, 30000);
     </script>
 </body>
 </html>

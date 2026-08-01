@@ -53,6 +53,9 @@ job "Dashboard" {
             target = "/etc/nginx/conf.d/default.conf"
           }
         ]
+
+        # world-readable consul client cert copies (see tls role / gotcha 8)
+        volumes = ["/etc/certs/prometheus:/certs"]
       }
 
       # nginx config: static page + read-only miniflux proxy. The API key
@@ -71,6 +74,17 @@ server {
         limit_except GET { deny all; }
         proxy_pass [[ var "miniflux_upstream" . ]]/v1/entries;
         proxy_set_header X-Auth-Token "[[ var "miniflux_api_key" . ]]";
+    }
+
+    # consul service health (mTLS upstream, read-only)
+    location = /api/health {
+        limit_except GET { deny all; }
+        proxy_pass https://100.116.81.88:8501/v1/internal/ui/services;
+        proxy_ssl_certificate         /certs/consul-client.pem;
+        proxy_ssl_certificate_key     /certs/consul-client-key.pem;
+        proxy_ssl_trusted_certificate /certs/consul-ca.pem;
+        proxy_ssl_verify              on;
+        proxy_ssl_name                server.kalmar.consul;
     }
 }
 EOH
