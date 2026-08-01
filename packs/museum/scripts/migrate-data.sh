@@ -186,7 +186,11 @@ docker run --rm --network "$NETWORK" --entrypoint sh minio/mc:latest -c "
     mc alias set src 'http://$LOCAL_MINIO_CONTAINER:9000' '$LOCAL_MINIO_USER' '$LOCAL_MINIO_PASSWORD'
     mc alias set pi  'http://$PI:$MINIO_PORT'             '$MINIO_USER'       '$MINIO_PASSWORD'
     mc mb --ignore-existing pi/$BUCKET
-    mc mirror --overwrite src/$BUCKET pi/$BUCKET
+    # No --overwrite: plain mirror already copies anything new or changed, and
+    # skips what matches. --overwrite re-uploads every object that is already
+    # there, which turns resuming an interrupted 345,000-object transfer into
+    # starting it again.
+    mc mirror src/$BUCKET pi/$BUCKET
     echo
     echo 'Source:'; mc du src/$BUCKET
     echo 'Target:'; mc du pi/$BUCKET
