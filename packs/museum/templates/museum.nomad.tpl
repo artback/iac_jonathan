@@ -535,6 +535,85 @@ job "museum" {
         }
       }
     }
+
+[[ if var "enable_tailscale" . ]]
+    # Joins the tailnet as its own device, so the catalogue answers to
+    # https://[[ var "tailscale_hostname" . ]].[[ var "tailnet_suffix" . ]]
+    # instead of to the Pi's hostname and a path.
+    #
+    # It is a task in the API's group rather than a group of its own, because
+    # tasks in a group share one network namespace: the proxy below reaches the
+    # API over loopback, and nothing new is published on the host.
+    task "tailscale" {
+      driver = "docker"
+
+      config {
+        image = "[[ var "tailscale_image" . ]]"
+
+        # The node's identity. Without it each replaced allocation registers a
+        # new device — museum-1, museum-2 — and the name drifts away while the
+        # auth key is spent again on every deploy. A mount stanza, for the same
+        # reason the database uses one: a bare name in volumes would put this
+        # in the allocation directory, which is exactly what does not survive.
+        mount {
+          type   = "volume"
+          source = "[[ var "tailscale_state_volume" . ]]"
+          target = "/var/lib/tailscale"
+        }
+      }
+
+      env {
+        TS_HOSTNAME  = "[[ var "tailscale_hostname" . ]]"
+        TS_STATE_DIR = "/var/lib/tailscale"
+
+        # Userspace networking: no TUN device, no NET_ADMIN, no privileged
+        # container. The sidecar only has to terminate HTTPS and proxy to a
+        # process beside it, which userspace mode does perfectly well.
+        TS_USERSPACE = "true"
+
+        TS_SERVE_CONFIG = "/local/serve.json"
+      }
+
+      template {
+        destination = "local/serve.json"
+        change_mode = "restart"
+        # The certificate domain is written out rather than left as the
+        # container's TS_CERT_DOMAIN placeholder: that would have to survive
+        # HCL interpolation, and $${} escaping through nomad-pack is this
+        # repository's documented trap.
+        data = <<EOH
+{
+  "TCP": { "443": { "HTTPS": true } },
+  "Web": {
+    "[[ var "tailscale_hostname" . ]].[[ var "tailnet_suffix" . ]]:443": {
+      "Handlers": {
+        "/": { "Proxy": "http://127.0.0.1:8090" }
+      }
+    }
+  }
+}
+EOH
+      }
+
+      # The auth key is a secret, so it arrives through the template's secrets
+      # directory rather than sitting in the job's env block where `nomad job
+      # inspect` would print it to anyone who can read the job.
+      template {
+        destination = "secrets/ts.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+TS_AUTHKEY="[[ var "tailscale_authkey" . ]]"
+EOH
+      }
+
+      resources {
+        cpu        = 100
+        memory     = 64
+        memory_max = 128
+      }
+    }
+[[ end ]]
   }
 
 [[ if var "enable_pipeline" . ]]

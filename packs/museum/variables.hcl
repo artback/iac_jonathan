@@ -57,6 +57,70 @@ variable "nominatim_user_agent" {
 }
 
 # ---------------------------------------------------------------------------
+# Tailscale
+#
+# Joins the tailnet as a device in its own right, so the catalogue answers to
+# https://museum.<tailnet>.ts.net rather than to the Pi's hostname and a path.
+# The sidecar shares the API group's network namespace, so it proxies to the
+# API over loopback and nothing extra is published on the host.
+# ---------------------------------------------------------------------------
+
+variable "enable_tailscale" {
+  description = "Join the tailnet as its own device. Requires tailscale_authkey."
+  type        = bool
+  default     = false
+}
+
+variable "tailscale_image" {
+  description = "Tailscale image. Multi-arch, so it runs on the Pi."
+  type        = string
+  default     = "tailscale/tailscale:stable"
+}
+
+variable "tailscale_hostname" {
+  description = "The device name, and therefore the first label of the MagicDNS name."
+  type        = string
+  default     = "museum"
+}
+
+variable "tailnet_suffix" {
+  description = <<-EOD
+    The tailnet's MagicDNS suffix, from `tailscale status --json`.
+
+    Written out in full rather than read from the container's TS_CERT_DOMAIN,
+    because that placeholder would have to survive HCL interpolation — and
+    $${} escaping through nomad-pack is the documented trap in this repository.
+  EOD
+  type        = string
+  default     = "tailb9a8bb.ts.net"
+}
+
+variable "tailscale_authkey" {
+  description = <<-EOD
+    A reusable, non-ephemeral auth key (secret — set in the vars file).
+
+    Reusable because the task re-authenticates whenever it starts without
+    saved state; non-ephemeral so the device is not removed from the tailnet
+    the moment the allocation stops. Generate at
+    https://login.tailscale.com/admin/settings/keys
+  EOD
+  type        = string
+  default     = ""
+}
+
+variable "tailscale_state_volume" {
+  description = <<-EOD
+    Volume holding the node's identity.
+
+    Without it every replaced allocation registers a *new* device — museum-1,
+    museum-2 — and the name you wanted drifts away while the auth key is spent
+    on each one.
+  EOD
+  type        = string
+  default     = "museum-tailscale-state"
+}
+
+# ---------------------------------------------------------------------------
 # PostgreSQL + PostGIS
 #
 # A second Postgres rather than the shared "postgres" job: the catalogue needs
