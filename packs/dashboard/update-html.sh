@@ -76,6 +76,13 @@ server {
         proxy_set_header X-Auth-Token "[[ var "miniflux_api_key" . ]]";
     }
 
+    # mark entries read/unread (the only write the dashboard may perform)
+    location = /api/miniflux/entries-status {
+        limit_except PUT { deny all; }
+        proxy_pass [[ var "miniflux_upstream" . ]]/v1/entries;
+        proxy_set_header X-Auth-Token "[[ var "miniflux_api_key" . ]]";
+    }
+
     # consul service health (mTLS upstream, read-only)
     location = /api/health {
         limit_except GET { deny all; }

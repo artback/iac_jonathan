@@ -178,6 +178,63 @@
         .dot[data-state="up"] { background: #4ADE80; }
         .dot[data-state="down"] { background: #F87171; box-shadow: 0 0 6px rgba(248,113,113,0.6); }
 
+        .card { position: relative; }
+
+        .card .pin {
+            position: absolute;
+            top: -7px;
+            right: -7px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--muted);
+            font-size: 0.65rem;
+            line-height: 1;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s, color 0.15s;
+        }
+
+        .card:hover .pin, .card .pin:focus-visible { opacity: 1; }
+        .card .pin.pinned { opacity: 1; color: #E8B45A; border-color: color-mix(in srgb, #E8B45A 40%, var(--border)); }
+
+        .spark {
+            align-self: center;
+            margin-left: 2px;
+        }
+
+        .spark polyline {
+            fill: none;
+            stroke: var(--accent);
+            stroke-width: 1.5;
+            stroke-linejoin: round;
+        }
+
+        .news-item { position: relative; }
+
+        .news-item .mark {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--muted);
+            font-size: 0.7rem;
+            line-height: 1;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+
+        .news-item:hover .mark, .news-item .mark:focus-visible { opacity: 1; }
+        .news-item .mark:hover { color: #4ADE80; border-color: color-mix(in srgb, #4ADE80 40%, var(--border)); }
+        .news-item.read { opacity: 0.35; transition: opacity 0.3s; }
+
         .category { margin-bottom: 28px; }
 
         .category-head {
@@ -420,7 +477,7 @@
             { name: "ChangeDetection", svc: "changedetection", port: 5000, logo: "https://cdn.simpleicons.org/opensourceinitiative/3056d3", url: "http://100.116.81.88:5000", category: "apps" },
             { name: "Beszel", svc: "beszel", port: 8090, logo: "https://cdn.simpleicons.org/lightning/38bdf8", url: "http://100.116.81.88:8090", category: "monitoring" },
             { name: "ConvertX", svc: "convertx", port: 5005, logo: "https://cdn.simpleicons.org/convertio/4ade80", url: "http://100.116.81.88:5005", category: "apps" },
-            { name: "Nomad API", svc: "nomad-api", port: 3000, logo: "", url: "https://raspberrypi.tailb9a8bb.ts.net/nomad-api", category: "apps" },
+            { name: "Nomad", port: 4646, logo: "https://cdn.simpleicons.org/nomad/00CA8E", url: "https://100.116.81.88:4646/ui", category: "infrastructure" },
             { name: "Prometheus", svc: "prometheus", port: 9090, logo: "https://cdn.simpleicons.org/prometheus/E6522C", url: "https://raspberrypi.tailb9a8bb.ts.net/prometheus", category: "monitoring" },
             { name: "Node-Exporter", svc: "node-exporter", port: 9100, logo: "https://cdn.simpleicons.org/prometheus/E6522C", url: "https://raspberrypi.tailb9a8bb.ts.net/node-exporter", category: "monitoring" },
             { name: "Ultra.cc", port: null, logo: "https://cdn.simpleicons.org/cloudflare/2563eb", url: "https://ultra.cc", category: "external" },
@@ -481,6 +538,18 @@
                 dot.dataset.svc = s.svc;
                 a.appendChild(dot);
             }
+            const pin = document.createElement('button');
+            pin.className = 'pin' + (pins.has(s.name) ? ' pinned' : '');
+            pin.textContent = pins.has(s.name) ? '★' : '☆';
+            pin.title = pins.has(s.name) ? 'Unpin' : 'Pin to top';
+            pin.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                pins.has(s.name) ? pins.delete(s.name) : pins.add(s.name);
+                localStorage.setItem('pins', JSON.stringify([...pins]));
+                rerender();
+            });
+            a.appendChild(pin);
             return a;
         }
 
@@ -491,10 +560,29 @@
             return d;
         }
 
+        const pins = new Set(JSON.parse(localStorage.getItem('pins') || '[]'));
+
         function render() {
+            const pinned = services
+                .filter(s => pins.has(s.name))
+                .sort((a, b) => a.name.localeCompare(b.name));
+            if (pinned.length) {
+                const section = document.createElement('div');
+                section.className = 'category';
+                const head = document.createElement('div');
+                head.className = 'category-head';
+                const h = document.createElement('h2');
+                h.textContent = 'Pinned';
+                head.appendChild(h);
+                const g = document.createElement('div');
+                g.className = 'service-grid';
+                pinned.forEach(s => g.appendChild(cardEl(s)));
+                section.append(head, g);
+                grid.appendChild(section);
+            }
             for (const cat of categoryOrder) {
                 const items = services
-                    .filter(s => s.category === cat)
+                    .filter(s => s.category === cat && !pins.has(s.name))
                     .sort((a, b) => a.name.localeCompare(b.name));
                 if (!items.length) continue;
                 const section = document.createElement('div');
@@ -541,6 +629,13 @@
                 k.textContent = 'Enter';
                 empty.append(k, ' to search the web for “' + input.value.trim() + '”');
             }
+        }
+
+        function rerender() {
+            grid.innerHTML = '';
+            render();
+            applyFilter();
+            loadHealth();
         }
 
         input.addEventListener('input', applyFilter);
@@ -592,6 +687,24 @@
                     meta.className = 'news-meta';
                     meta.textContent = (e.feed?.title || '') + ' · ' + relTime(e.published_at);
                     a.append(title, meta);
+                    if (e.status === 'unread') {
+                        const mark = document.createElement('button');
+                        mark.className = 'mark';
+                        mark.textContent = '✓';
+                        mark.title = 'Mark as read';
+                        mark.addEventListener('click', (ev) => {
+                            ev.preventDefault();
+                            ev.stopPropagation();
+                            fetch('/api/miniflux/entries-status', {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ entry_ids: [e.id], status: 'read' })
+                            }).then(r => {
+                                if (r.ok) { a.classList.add('read'); mark.remove(); }
+                            }).catch(() => {});
+                        });
+                        a.appendChild(mark);
+                    }
                     list.appendChild(a);
                 }
             })
@@ -669,6 +782,33 @@
                 }
                 if (any) document.getElementById('stats-strip').hidden = false;
             });
+            loadSparkline();
+        }
+
+        function loadSparkline() {
+            const end = Math.floor(Date.now() / 1000);
+            const q = encodeURIComponent('100 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m]))*100');
+            fetch('/prometheus/api/v1/query_range?query=' + q + '&start=' + (end - 3600) + '&end=' + end + '&step=180')
+                .then(r => r.json())
+                .then(d => {
+                    const vals = (d.data.result[0]?.values || []).map(v => parseFloat(v[1]));
+                    if (vals.length < 2) return;
+                    const w = 56, h = 14, max = Math.max(...vals, 10);
+                    const pts = vals.map((v, i) =>
+                        (i / (vals.length - 1) * w).toFixed(1) + ',' + (h - v / max * h).toFixed(1)
+                    ).join(' ');
+                    let svg = document.querySelector('#stat-cpu .spark');
+                    if (!svg) {
+                        svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                        svg.setAttribute('class', 'spark');
+                        svg.setAttribute('width', w);
+                        svg.setAttribute('height', h);
+                        svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+                        document.getElementById('stat-cpu').appendChild(svg);
+                    }
+                    svg.innerHTML = '<polyline points="' + pts + '"/>';
+                })
+                .catch(() => {});
         }
 
         loadHealth();
