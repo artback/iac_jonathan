@@ -19,6 +19,24 @@ Four job files render from this pack:
 Everything is the same image and the same binary; the groups differ only in the
 subcommand they start it with.
 
+## Volumes must be mount stanzas
+
+The three stateful tasks use `mount { type = "volume" }` rather than an entry
+in the docker driver's `volumes` list. This is not a style preference.
+
+A `volumes` entry whose source is not an absolute path — `"museum-postgres-data:/var/lib/postgresql/data"` —
+is resolved by the driver **against the allocation directory**, not as a Docker
+named volume. It becomes `/opt/nomad/data/alloc/<id>/<task>/museum-postgres-data`,
+which survives task restarts and redeploys that reuse the allocation, and is
+destroyed the moment a deploy places a new one. The catalogue verified as
+present for an hour before the first CD run replaced the allocations and took
+180,137 museums and 345,128 objects with it.
+
+Counting rows does not test this. The test is: write a row, `nomad alloc stop`
+the group, read it back from the replacement allocation. `docker volume ls` on
+the client should list the volume by name; if it does not, the data is
+somewhere temporary.
+
 ## Two things that are not obvious
 
 **PostGIS must not be `postgis/postgis`.** That repository publishes amd64

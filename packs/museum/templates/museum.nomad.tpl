@@ -384,7 +384,23 @@ job "museum" {
           # any rule left from a previous deploy is removed, so that mirroring
           # the existing catalogue in does not raise an event per object. See
           # the seed_mode variable for why that matters.
-          mc event rm "local/$BUCKET" arn:minio:sqs::1:kafka 2>/dev/null || true
+          #
+          # The event and prefix must be repeated here. mc matches the rule to
+          # remove on its whole definition, not on the ARN alone, so removing
+          # by ARN fails with "no notification configuration matched" and
+          # leaves the rule in place.
+          mc event rm "local/$BUCKET" arn:minio:sqs::1:kafka --event put --prefix "raw_data/" 2>/dev/null || true
+
+          # Verified rather than assumed. This is the only thing standing
+          # between a bulk load and several hundred thousand requests to a
+          # geocoder that permits one a second, and the first version of this
+          # hid the removal's failure behind "|| true" — the rule survived and
+          # only the migration script's own check caught it.
+          if mc event ls "local/$BUCKET" | grep -q 'arn:minio:sqs'; then
+            echo "SEED MODE FAILED: the notification rule is still attached." >&2
+            mc event ls "local/$BUCKET" >&2
+            exit 1
+          fi
           echo "SEED MODE: bucket notification not attached for local/$BUCKET."
 [[ else ]]
           # The prefix filter matters: the enricher writes its output back to

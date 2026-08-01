@@ -23,7 +23,10 @@ set -euo pipefail
 REPO="${MUSEUM_REPO:-$HOME/Code/museum}"
 PI="${PI:-100.116.81.88}"
 PG_PORT="${PG_PORT:-55432}"
-MINIO_PORT="${MINIO_PORT:-9100}"
+# 9110, not 9100: node-exporter holds 9100. Kept in step with minio_port in
+# packs/museum/variables.hcl — a stale default here points the mirror at
+# whatever else is listening rather than failing outright.
+MINIO_PORT="${MINIO_PORT:-9110}"
 PG_USER="${PG_USER:-museum}"
 PG_DB="${PG_DB:-museum}"
 BUCKET="${BUCKET:-museum}"
