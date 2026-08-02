@@ -47,7 +47,11 @@ job "Dashboard" {
         ]
 
         # world-readable consul client cert copies (see tls role / gotcha 8)
-        volumes = ["/etc/certs/prometheus:/certs"]
+        # + host-published ink levels (root cron: /usr/local/bin/ink-report.sh)
+        volumes = [
+          "/etc/certs/prometheus:/certs",
+          "/home/dwight/ink.json:/usr/share/nginx/html/ink.json",
+        ]
       }
 
       # nginx config: static page + read-only miniflux proxy. The API key
