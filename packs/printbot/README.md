@@ -30,9 +30,13 @@ printer comes back.
 
 ## Host prerequisites (already applied to the Pi, 2026-08-02)
 
-- `cups` + `ipp-usb` installed; queue `HP_ENVY_6000` created driverless from
-  the ipp-usb mDNS URI (the `localhost:60000` URI yields a capability-less
-  PPD — use the `driverless list` URI instead).
+- `cups` + `ipp-usb` installed; queue `HP_ENVY_6000` created with the
+  **cups-filters driverless PPD**, not cups' internal one:
+  `lpadmin -p HP_ENVY_6000 -E -v <uri> -m "driverless:<uri>" ...` where
+  `<uri>` comes from `driverless list`. Both the `localhost:60000` URI and
+  `-m everywhere` yield a thin generic PPD ("Printer") for this model —
+  the printer then cancels every job at its end (backend status 5),
+  because it never natively accepted PDF (only PCLm/URF/JPEG).
 - `printer-error-policy=retry-job` so an offline printer holds, not stops,
   the queue.
 - UFW: 631/tcp on eth0 + tailscale0, 5353/udp on eth0.
