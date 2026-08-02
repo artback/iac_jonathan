@@ -206,6 +206,12 @@ def handle(msg):
                  + "(Your chat id is " + chat + " — an existing customer "
                  + "can /invite you.)")
         return
+    if name != "someone":
+        with STATE_LOCK:
+            st = load_state()
+            if st.setdefault("names", {}).get(chat) != name:
+                st["names"][chat] = name
+                save_state(st)
     if text.startswith("/invite"):
         code = pysecrets.token_urlsafe(6)
         with STATE_LOCK:
@@ -219,8 +225,10 @@ def handle(msg):
         return
     if text.startswith("/members"):
         st = load_state()
-        lines = [i + " (from vars file)" for i in sorted(BASE_ALLOWED)]
-        lines += [c + " — " + m["name"] + ", joined " + m["joined"]
+        nm = st.get("names", {})
+        lines = [nm.get(i, "…") + " (" + i + ", vars file)"
+                 for i in sorted(BASE_ALLOWED)]
+        lines += [nm.get(c, m["name"]) + " (" + c + ", joined " + m["joined"] + ")"
                   for c, m in sorted(st["members"].items())]
         say(chat, "👥 Sabre Customer Registry:\n" + "\n".join(lines))
         return
