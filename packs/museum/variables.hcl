@@ -328,15 +328,21 @@ variable "crawl_cron" {
 }
 
 variable "enable_crawl" {
-  description = "Register the weekly crawl job. Off by default: it saturates the Pi for hours."
+  description = "Register the weekly crawl job. On: the catalogue goes stale without it, and the crawl is checkpointed so an interrupted run costs 30 seconds rather than the night."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "crawl_sources" {
   description = "Which sources the crawl reads. Excludes osm by default, as the binary does — Overpass is the slowest and the least reliable of the four."
   type        = string
   default     = "wikidata,category,lists"
+}
+
+variable "crawl_languages" {
+  description = "Wikipedia editions the category crawl reads, or \"all\" for every edition it knows. English only by default: each extra edition is a full category walk and roughly doubles that source's traffic. Of the museums Wikidata knows, 35,352 have an article in some language and none in English, so widening this is how they become verified."
+  type        = string
+  default     = "en"
 }
 
 # ---------------------------------------------------------------------------

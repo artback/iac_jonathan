@@ -14,7 +14,7 @@ Four job files render from this pack:
 | `museum` | service | PostGIS, MinIO, Kafka, the HTTP API, the enricher |
 | `museum-refresh` | periodic | Rescrapes exhibition listings, daily |
 | `museum-backup` | periodic | Dumps the catalogue to NVMe and USB, daily |
-| `museum-crawl` | periodic | Rebuilds from Wikidata/Wikipedia/OSM, weekly — off by default |
+| `museum-crawl` | periodic | Rebuilds from Wikidata/Wikipedia/OSM, weekly at 01:00 UTC |
 
 Everything is the same image and the same binary; the groups differ only in the
 subcommand they start it with.
@@ -155,6 +155,7 @@ knowing about:
 
 - `seed_mode` — read the section above before setting it false for the first load
 - `enable_pipeline` — MinIO, Kafka and the enricher, or just PostGIS and the API
-- `enable_crawl` — registers the weekly crawl; off because it saturates the Pi for hours
+- `enable_crawl` — registers the weekly crawl; on, since the catalogue goes stale without it
+- `crawl_languages` — Wikipedia editions the category crawl reads; `en`, or `all` for every edition
 - `image` — must be linux/arm64
 - `pg_password`, `minio_root_password` — no defaults, set them in the vars file

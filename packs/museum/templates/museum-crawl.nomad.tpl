@@ -2,9 +2,13 @@
 # Rebuilds the catalogue from Wikidata, Wikipedia and OpenStreetMap, then loads
 # the result into the database.
 #
-# Off by default (enable_crawl). A full crawl is hours of rate-limited work and
-# writes 345,000 objects through MinIO and Kafka to the enricher; on a Pi that
-# is shared with sixteen other allocations it is a decision, not a default.
+# Hours of rate-limited work, weekly, on a Pi shared with sixteen other
+# allocations — so it runs at 01:00 and never overlaps itself.
+#
+# It does not flood the enricher, despite writing the whole catalogue: the
+# object store skips keys that are already present, so a rerun raises events
+# only for museums that are actually new. The first load is the exception, and
+# that is what seed_mode is for.
 job "museum-crawl" {
   datacenters = [[ var "datacenters" . | toStringList ]]
   type        = "batch"
@@ -31,8 +35,23 @@ job "museum-crawl" {
 
       config {
         image = "[[ var "image" . ]]"
-        args  = ["crawl", "-sources", "[[ var "crawl_sources" . ]]"]
+        args = [
+          "crawl",
+          "-sources", "[[ var "crawl_sources" . ]]",
+          "-languages", "[[ var "crawl_languages" . ]]",
+        ]
       }
+
+      # A crawl answers SIGTERM by stopping collection and then spending up to
+      # thirty minutes writing down what it already has — deliberately, because
+      # interrupting a crawl should not throw away the hour before it. Nomad's
+      # default kill_timeout is five seconds, which turns that design into a
+      # SIGKILL and discards the final merged write along with the duplicate
+      # merges that follow it.
+      #
+      # Thirty seconds is the most a client will honour without raising its own
+      # max_kill_timeout, and it is enough for the checkpointed records to land.
+      kill_timeout = "30s"
 
       env {
         DATABASE_URL         = "postgres://[[ var "pg_user" . ]]:[[ var "pg_password" . ]]@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable"
@@ -48,10 +67,16 @@ job "museum-crawl" {
         TZ                   = "Europe/Stockholm"
       }
 
+      # The reservation is unchanged; only the ceiling moves. The crawl holds
+      # every record it has collected in memory until the end — that is what the
+      # merger is — and with the default sources that is the whole catalogue,
+      # around 200,000 records plus the name index built over their aliases.
+      # Being OOM-killed ninety minutes into a two-hour run is a silent way to
+      # waste the night, and the headroom costs nothing when it is not used.
       resources {
         cpu        = 1000
         memory     = 512
-        memory_max = 1024
+        memory_max = 1536
       }
     }
 
