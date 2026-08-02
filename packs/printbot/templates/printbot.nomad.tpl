@@ -95,6 +95,12 @@ def print_file(path, title):
     return m.group(1) if m else r.stdout.strip()
 
 def watch_job(chat, job, name):
+    try:
+        watch_job_inner(chat, job, name)
+    except Exception as e:
+        print("watcher error:", e, flush=True)
+
+def watch_job_inner(chat, job, name):
     # The queue is the source of truth: job gone + in completed = printed;
     # gone but not completed = canceled/failed; still queued = printer off.
     nudged = False
@@ -155,15 +161,17 @@ def handle(msg):
         doc["file_name"] = "photo.jpg"
     if not doc:
         return
-    info = api("getFile", file_id=doc["file_id"])
-    url = "https://api.telegram.org/file/bot" + TOKEN + "/" + info["result"]["file_path"]
     name = doc.get("file_name", "telegram-print")
-    with tempfile.NamedTemporaryFile(suffix="-" + name, delete=False) as f:
-        with urllib.request.urlopen(url, timeout=120) as r:
-            f.write(r.read())
-        tmp = f.name
+    tmp = None
     pdf_tmp = None
     try:
+        # bot API refuses files >20MB — surface that instead of failing silently
+        info = api("getFile", file_id=doc["file_id"])
+        url = "https://api.telegram.org/file/bot" + TOKEN + "/" + info["result"]["file_path"]
+        with tempfile.NamedTemporaryFile(suffix="-" + name, delete=False) as f:
+            with urllib.request.urlopen(url, timeout=120) as r:
+                f.write(r.read())
+            tmp = f.name
         target = tmp
         if convert:
             say(chat, "Routing " + name + " through the Sabre Document Excellence Pipeline™…")
@@ -173,11 +181,13 @@ def handle(msg):
         say(chat, "Sabre job " + job.rsplit("-", 1)[-1] + " accepted 🖨️ It's pronounced 'SAH-bray.'")
         threading.Thread(target=watch_job, args=(chat, job, name), daemon=True).start()
     except Exception as e:
-        say(chat, "Print failed: " + str(e) + "\nYou should have gotten the insurance, like Jo said.")
+        note = " (Telegram bots can only fetch files up to 20MB)" if "400" in str(e) else ""
+        say(chat, "Print failed: " + str(e) + note
+                 + "\nYou should have gotten the insurance, like Jo said.")
     finally:
-        os.unlink(tmp)
-        if pdf_tmp:
-            os.unlink(pdf_tmp)
+        for p in (tmp, pdf_tmp):
+            if p and os.path.exists(p):
+                os.unlink(p)
 
 def main():
     offset = 0
@@ -197,8 +207,9 @@ EOH
       }
 
       resources {
-        cpu    = 100
-        memory = 64
+        cpu        = 100
+        memory     = 64
+        memory_max = 256
       }
     }
   }
