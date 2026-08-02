@@ -27,6 +27,11 @@ printer comes back.
 
 - send a file/photo — queues it for printing
 - `/status` — printer + queue state
+- `/ink` — cartridge levels (as last reported by the hpcups driver)
+- `/cancel N` — cancel job N
+- `/clear` — cancel all waiting jobs (only jobs the bot submitted; SSH-submitted
+  jobs belong to another user and are skipped)
+- `/help` — command list
 
 ## Host prerequisites (already applied to the Pi, 2026-08-02)
 
