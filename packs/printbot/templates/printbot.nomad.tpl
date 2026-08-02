@@ -106,30 +106,36 @@ def watch_job(chat, job, name):
             done = subprocess.run(["lpstat", "-h", CUPS, "-W", "completed", "-o"],
                                   capture_output=True, text=True, timeout=15).stdout
             if job in done:
-                say(chat, "Printed: " + name + " ✅")
+                say(chat, "Printed: " + name + " ✅ And it didn't even catch fire.")
             else:
-                say(chat, "The printer rejected " + name
-                         + " ❌ — check /status or try a different format.")
+                say(chat, "The printer has rejected " + name + " ❌ Sabre's official "
+                         + "position is that this is a feature. Check /status "
+                         + "or try a different format.")
             return
         if not nudged and i >= 11:
-            say(chat, "The printer looks offline — " + name + " is safely queued "
-                     + "and will print automatically when it's powered on. ⏳")
+            say(chat, "The printer appears to be powered off. " + name + " is safely "
+                     + "queued and prints the moment it wakes up ⏳ "
+                     + "A Sabre product never forgets. Unlike Creed.")
             nudged = True
-    say(chat, "Gave up watching " + name + " after 12h — check /status.")
+    say(chat, "After 12 hours, Sabre has decided " + name
+             + " is now Dunder Mifflin's problem. Check /status.")
 
 def handle(msg):
     chat = str(msg["chat"]["id"])
     if chat not in ALLOWED:
-        say(chat, "Not authorized. Your chat id is " + chat)
+        say(chat, "You are not an authorized Sabre customer. "
+                 + "This incident will be reported to Jo Bennett. "
+                 + "(Your chat id is " + chat + ")")
         return
     text = msg.get("text", "")
     if text.startswith("/status"):
-        say(chat, queue_status())
+        say(chat, "📋 Sabre Quality Assurance Report:\n" + queue_status())
         return
     if text.startswith("/start") or (text and not msg.get("document") and not msg.get("photo")):
-        say(chat, "Send me a PDF, photo, text file or office doc (docx/xlsx/pptx/odt) "
-                 + "and I will print it on " + PRINTER
-                 + ". If the printer is off, the job waits in the queue. /status shows the queue.")
+        say(chat, "Welcome to Sabre Printing Solutions. It's pronounced 'SAH-bray.'\n\n"
+                 + "Send a PDF, photo, text file or office doc (docx/xlsx/pptx/odt) "
+                 + "and it prints on " + PRINTER + ". Printer off? The job waits — "
+                 + "a Sabre product never forgets.\n\n/status — Quality Assurance Report")
         return
     doc = msg.get("document")
     convert = False
@@ -140,8 +146,9 @@ def handle(msg):
         elif GOTENBERG and name_l.endswith(CONVERT_EXT):
             convert = True
         else:
-            say(chat, "Can't print " + str(doc.get("mime_type"))
-                     + ". I take PDF, images, text, or office docs (docx/xlsx/pptx/odt...).")
+            say(chat, "Sabre does not currently support " + str(doc.get("mime_type"))
+                     + ". Our engineers in Tallahassee accept PDF, images, text, "
+                     + "or office docs (docx/xlsx/pptx/odt...).")
             return
     if msg.get("photo"):
         doc = max(msg["photo"], key=lambda p: p.get("file_size", 0))
@@ -159,14 +166,14 @@ def handle(msg):
     try:
         target = tmp
         if convert:
-            say(chat, "Converting " + name + " to PDF…")
+            say(chat, "Routing " + name + " through the Sabre Document Excellence Pipeline™…")
             pdf_tmp = to_pdf(tmp, name)
             target = pdf_tmp
         job = print_file(target, name)
-        say(chat, "Job " + job.rsplit("-", 1)[-1] + " accepted 🖨️ …")
+        say(chat, "Sabre job " + job.rsplit("-", 1)[-1] + " accepted 🖨️ It's pronounced 'SAH-bray.'")
         threading.Thread(target=watch_job, args=(chat, job, name), daemon=True).start()
     except Exception as e:
-        say(chat, "Print failed: " + str(e))
+        say(chat, "Print failed: " + str(e) + "\nYou should have gotten the insurance, like Jo said.")
     finally:
         os.unlink(tmp)
         if pdf_tmp:
