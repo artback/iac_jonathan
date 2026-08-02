@@ -11,7 +11,7 @@ job "printbot" {
       config {
         image   = "python:3.12-alpine"
         command = "sh"
-        args    = ["-c", "apk add --no-cache cups-client >/dev/null 2>&1 && exec python /local/bot.py"]
+        args    = ["-c", "apk add --no-cache cups-client >/dev/null 2>&1; apk add --no-cache cups-ipptool >/dev/null 2>&1; exec python /local/bot.py"]
         mounts = [
           {
             type   = "bind"
@@ -39,7 +39,7 @@ job "printbot" {
         destination = "local/bot.py"
         change_mode = "restart"
         data        = <<EOH
-import json, os, re, subprocess, tempfile, threading, time, urllib.request, urllib.parse
+import json, os, re, shutil, subprocess, tempfile, threading, time, urllib.request, urllib.parse
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 API = "https://api.telegram.org/bot" + TOKEN
@@ -134,17 +134,86 @@ def handle(msg):
                  + "(Your chat id is " + chat + ")")
         return
     text = msg.get("text", "")
+    if text.startswith("/help"):
+        say(chat, "📋 Sabre Command Suite (it's pronounced 'SAH-bray'):\n\n"
+                 + "Send any file or photo — prints it\n"
+                 + "/status — queue + printer state\n"
+                 + "/ink — cartridge levels\n"
+                 + "/cancel N — cancel job N\n"
+                 + "/clear — cancel every waiting job\n"
+                 + "/help — this list")
+        return
     if text.startswith("/status"):
         try:
             say(chat, "📋 Sabre Quality Assurance Report:\n" + queue_status())
         except Exception as e:
             say(chat, "Couldn't reach the print queue: " + str(e))
         return
+    if text.startswith("/clear"):
+        try:
+            pending = subprocess.run(["lpstat", "-h", CUPS, "-o"],
+                                     capture_output=True, text=True, timeout=15).stdout
+            jobs = re.findall(r"^(\S+-\d+)", pending, re.M)
+            if not jobs:
+                say(chat, "The queue is already empty. Sabre efficiency.")
+                return
+            failed = []
+            for j in jobs:
+                r = subprocess.run(["cancel", "-h", CUPS, j],
+                                   capture_output=True, text=True, timeout=15)
+                if r.returncode != 0:
+                    failed.append(j + ": " + r.stderr.strip())
+            msg = "Canceled " + str(len(jobs) - len(failed)) + " job(s) 🧹"
+            if failed:
+                msg += "\nCouldn't cancel:\n" + "\n".join(failed)
+            say(chat, msg)
+        except Exception as e:
+            say(chat, "Clear failed: " + str(e))
+        return
+    if text.startswith("/cancel"):
+        m = re.search(r"/cancel\s+(\d+)", text)
+        if not m:
+            say(chat, "Usage: /cancel N  (job number from /status)")
+            return
+        j = PRINTER + "-" + m.group(1)
+        r = subprocess.run(["cancel", "-h", CUPS, j],
+                           capture_output=True, text=True, timeout=15)
+        say(chat, ("Canceled " + j + " 🧹") if r.returncode == 0
+                 else "Couldn't cancel " + j + ": " + r.stderr.strip())
+        return
+    if text.startswith("/ink"):
+        try:
+            if not shutil.which("ipptool"):
+                say(chat, "Ink readout isn't available on this build.")
+                return
+            test = "/tmp/ink.test"
+            with open(test, "w") as f:
+                f.write('{ OPERATION Get-Printer-Attributes\n'
+                        '  GROUP operation-attributes-tag\n'
+                        '  ATTR charset attributes-charset utf-8\n'
+                        '  ATTR naturalLanguage attributes-natural-language en\n'
+                        '  ATTR uri printer-uri $uri\n'
+                        '  DISPLAY marker-names\n  DISPLAY marker-levels\n}\n')
+            r = subprocess.run(["ipptool", "-tv",
+                                "ipp://" + CUPS + "/printers/" + PRINTER, test],
+                               capture_output=True, text=True, timeout=20)
+            names = re.search(r"marker-names .*= (.*)", r.stdout)
+            levels = re.search(r"marker-levels .*= (.*)", r.stdout)
+            if names and levels:
+                pairs = zip([n.strip() for n in names.group(1).split(",")],
+                            [l.strip() for l in levels.group(1).split(",")])
+                say(chat, "🖋 Sabre Ink Audit:\n"
+                         + "\n".join(n + ": " + l + "%" for n, l in pairs))
+            else:
+                say(chat, "No ink reading yet — print something first.")
+        except Exception as e:
+            say(chat, "Ink check failed: " + str(e))
+        return
     if text.startswith("/start") or (text and not msg.get("document") and not msg.get("photo")):
         say(chat, "Welcome to Sabre Printing Solutions. It's pronounced 'SAH-bray.'\n\n"
                  + "Send a PDF, photo, text file or office doc (docx/xlsx/pptx/odt) "
                  + "and it prints on " + PRINTER + ". Printer off? The job waits — "
-                 + "a Sabre product never forgets.\n\n/status — Quality Assurance Report")
+                 + "a Sabre product never forgets.\n\n/help — all commands")
         return
     doc = msg.get("document")
     convert = False
