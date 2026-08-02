@@ -135,7 +135,10 @@ def handle(msg):
         return
     text = msg.get("text", "")
     if text.startswith("/status"):
-        say(chat, "📋 Sabre Quality Assurance Report:\n" + queue_status())
+        try:
+            say(chat, "📋 Sabre Quality Assurance Report:\n" + queue_status())
+        except Exception as e:
+            say(chat, "Couldn't reach the print queue: " + str(e))
         return
     if text.startswith("/start") or (text and not msg.get("document") and not msg.get("photo")):
         say(chat, "Welcome to Sabre Printing Solutions. It's pronounced 'SAH-bray.'\n\n"
