@@ -39,7 +39,7 @@ job "printbot" {
         destination = "local/bot.py"
         change_mode = "restart"
         data        = <<EOH
-import json, os, re, subprocess, tempfile, threading, time, urllib.request, urllib.parse
+import datetime, json, os, re, subprocess, tempfile, threading, time, urllib.request, urllib.parse
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 API = "https://api.telegram.org/bot" + TOKEN
@@ -248,7 +248,50 @@ def handle(msg):
             if p and os.path.exists(p):
                 os.unlink(p)
 
+def broadcast(text):
+    for c in ALLOWED:
+        say(c, text)
+
+def alert_loop():
+    # One ping per state change, to every allowed chat. Checks every 30 min.
+    state = {}
+    while True:
+        try:
+            with urllib.request.urlopen(INK_URL, timeout=15) as r:
+                d = json.load(r)
+            try:
+                age_h = (datetime.datetime.now()
+                         - datetime.datetime.fromisoformat(d["updated"])).total_seconds() / 3600
+            except Exception:
+                age_h = 0
+            if age_h > 26 and state.get("_stale") != "stale":
+                broadcast("⚠️ Sabre Telemetry Notice: the ink readings stopped "
+                          + "updating " + str(int(age_h)) + "h ago — the report "
+                          + "cron on the Pi may be broken.")
+                state["_stale"] = "stale"
+            elif age_h <= 26:
+                state["_stale"] = "ok"
+            for s in d.get("supplies", []):
+                pct, name = s["percent"], s["name"]
+                band = "out" if pct <= 5 else "low" if pct <= 15 else "ok"
+                if band != state.get(name):
+                    if band == "out":
+                        broadcast("🛑 Sabre Supply Emergency: " + name + " at "
+                                  + str(pct) + "% — replace it now (HP 305). "
+                                  + "Jobs will queue but print poorly or not at all.")
+                    elif band == "low":
+                        broadcast("⚠️ Sabre Supply Notice: " + name + " at "
+                                  + str(pct) + "% — time to order an HP 305/305XL.")
+                    elif state.get(name) in ("low", "out"):
+                        broadcast("✅ " + name + " replaced — back to "
+                                  + str(pct) + "%. Sabre thanks you.")
+                    state[name] = band
+        except Exception as e:
+            print("alert loop error:", e, flush=True)
+        time.sleep(1800)
+
 def main():
+    threading.Thread(target=alert_loop, daemon=True).start()
     offset = 0
     while True:
         try:
