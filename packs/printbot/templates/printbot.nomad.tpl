@@ -95,20 +95,27 @@ def print_file(path, title):
     return m.group(1) if m else r.stdout.strip()
 
 def watch_job(chat, job, name):
-    # follow the job until it leaves the queue; nudge if it lingers
+    # The queue is the source of truth: job gone + in completed = printed;
+    # gone but not completed = canceled/failed; still queued = printer off.
     nudged = False
-    for i in range(360):  # up to ~12h
-        time.sleep(10 if i < 30 else 120)
-        r = subprocess.run(["lpstat", "-h", CUPS, "-o"],
-                           capture_output=True, text=True, timeout=15)
-        if job not in r.stdout:
-            say(chat, "Printed: " + name + " ✅")
+    for i in range(400):  # ~12h
+        time.sleep(5 if i < 12 else 120)
+        pending = subprocess.run(["lpstat", "-h", CUPS, "-o"],
+                                 capture_output=True, text=True, timeout=15).stdout
+        if job not in pending:
+            done = subprocess.run(["lpstat", "-h", CUPS, "-W", "completed", "-o"],
+                                  capture_output=True, text=True, timeout=15).stdout
+            if job in done:
+                say(chat, "Printed: " + name + " ✅")
+            else:
+                say(chat, "The printer rejected " + name
+                         + " ❌ — check /status or try a different format.")
             return
-        if not nudged and i >= 12:
-            say(chat, "Still in the queue — printer off? It will print "
-                     + "automatically once it is powered on.")
+        if not nudged and i >= 11:
+            say(chat, "The printer looks offline — " + name + " is safely queued "
+                     + "and will print automatically when it's powered on. ⏳")
             nudged = True
-    say(chat, "Gave up watching " + name + " — check /status.")
+    say(chat, "Gave up watching " + name + " after 12h — check /status.")
 
 def handle(msg):
     chat = str(msg["chat"]["id"])
@@ -156,7 +163,7 @@ def handle(msg):
             pdf_tmp = to_pdf(tmp, name)
             target = pdf_tmp
         job = print_file(target, name)
-        say(chat, "Sent to printer as job " + job.rsplit("-", 1)[-1] + " 🖨️")
+        say(chat, "Job " + job.rsplit("-", 1)[-1] + " accepted 🖨️ …")
         threading.Thread(target=watch_job, args=(chat, job, name), daemon=True).start()
     except Exception as e:
         say(chat, "Print failed: " + str(e))
