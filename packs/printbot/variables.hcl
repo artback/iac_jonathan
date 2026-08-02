@@ -21,6 +21,12 @@ variable "cups_server" {
   default     = "100.116.81.88:631"
 }
 
+variable "gotenberg_url" {
+  description = "Gotenberg conversion API for office documents (empty disables conversion)."
+  type        = string
+  default     = "http://100.116.81.88:3010"
+}
+
 variable "printer" {
   description = "CUPS queue name."
   type        = string
