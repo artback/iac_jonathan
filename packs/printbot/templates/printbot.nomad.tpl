@@ -39,7 +39,7 @@ job "printbot" {
         destination = "local/bot.py"
         change_mode = "restart"
         data        = <<EOH
-import datetime, json, os, re, subprocess, tempfile, threading, time, urllib.request, urllib.parse
+import json, os, re, subprocess, tempfile, threading, time, urllib.request, urllib.parse
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 API = "https://api.telegram.org/bot" + TOKEN
@@ -48,6 +48,24 @@ CUPS = os.environ["CUPS_SERVER"]
 PRINTER = os.environ["PRINTER"]
 GOTENBERG = os.environ.get("GOTENBERG", "")
 INK_URL = os.environ.get("INK_URL", "http://100.116.81.88/ink.json")
+ESCL = os.environ.get("ESCL_URL", "http://100.116.81.88:60000/eSCL")
+
+SCAN_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<scan:ScanSettings xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03"'
+    ' xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">'
+    '<pwg:Version>2.0</pwg:Version>'
+    '<pwg:ScanRegions><pwg:ScanRegion>'
+    '<pwg:XOffset>0</pwg:XOffset><pwg:YOffset>0</pwg:YOffset>'
+    '<pwg:Width>2550</pwg:Width><pwg:Height>3508</pwg:Height>'
+    '<pwg:ContentRegionUnits>escl:ThreeHundredthsOfInches</pwg:ContentRegionUnits>'
+    '</pwg:ScanRegion></pwg:ScanRegions>'
+    '<pwg:InputSource>Platen</pwg:InputSource>'
+    '<scan:ColorMode>RGB24</scan:ColorMode>'
+    '<scan:XResolution>300</scan:XResolution>'
+    '<scan:YResolution>300</scan:YResolution>'
+    '<pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>'
+    '</scan:ScanSettings>')
 OK_MIME = ("application/pdf", "image/jpeg", "image/png", "text/plain")
 CONVERT_EXT = (".docx", ".doc", ".odt", ".xlsx", ".xls", ".ods",
                ".pptx", ".ppt", ".odp", ".rtf")
@@ -138,11 +156,19 @@ def handle(msg):
     if text.startswith("/help"):
         say(chat, "📋 Sabre Command Suite (it's pronounced 'SAH-bray'):\n\n"
                  + "Send any file or photo — prints it\n"
+                 + "/scan — scan the flatbed, get a JPG back\n"
+                 + "/scan pdf — same, as PDF\n"
                  + "/status — queue + printer state\n"
                  + "/ink — cartridge levels\n"
                  + "/cancel N — cancel job N\n"
                  + "/clear — cancel every waiting job\n"
                  + "/help — this list")
+        return
+    if text.startswith("/scan"):
+        want_pdf = "pdf" in text
+        say(chat, "📠 Sabre Imaging Division: scanning the platen… (place the "
+                 + "document face-down, this takes ~30s)")
+        threading.Thread(target=do_scan, args=(chat, want_pdf), daemon=True).start()
         return
     if text.startswith("/status"):
         try:
@@ -248,6 +274,63 @@ def handle(msg):
             if p and os.path.exists(p):
                 os.unlink(p)
 
+def send_document(chat, data, filename):
+    boundary = "----sabrescan" + str(int(time.time()))
+    body = (("--" + boundary + "\r\n"
+             + 'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+             + chat + "\r\n--" + boundary + "\r\n"
+             + 'Content-Disposition: form-data; name="document"; filename="' + filename + '"\r\n'
+             + "Content-Type: application/octet-stream\r\n\r\n").encode()
+            + data + ("\r\n--" + boundary + "--\r\n").encode())
+    req = urllib.request.Request(API + "/sendDocument", data=body,
+        headers={"Content-Type": "multipart/form-data; boundary=" + boundary})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        r.read()
+
+def do_scan(chat, want_pdf):
+    try:
+        req = urllib.request.Request(ESCL + "/ScanJobs", data=SCAN_XML.encode(),
+                                     headers={"Content-Type": "text/xml"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            job = r.headers.get("Location", "")
+        if not job:
+            say(chat, "The scanner didn't accept the job — is the printer on?")
+            return
+        data = None
+        for _ in range(15):
+            time.sleep(8)
+            try:
+                with urllib.request.urlopen(job + "/NextDocument", timeout=60) as r:
+                    data = r.read()
+                break
+            except Exception:
+                continue
+        try:
+            urllib.request.urlopen(
+                urllib.request.Request(job, method="DELETE"), timeout=10).read()
+        except Exception:
+            pass
+        if not data:
+            say(chat, "Scan timed out — lid open, or printer asleep? Try again.")
+            return
+        stamp = time.strftime("%Y%m%d-%H%M")
+        if want_pdf and GOTENBERG:
+            boundary = "----scanpdf" + str(int(time.time()))
+            body = (("--" + boundary + "\r\n"
+                     + 'Content-Disposition: form-data; name="files"; filename="scan.jpg"\r\n'
+                     + "Content-Type: image/jpeg\r\n\r\n").encode()
+                    + data + ("\r\n--" + boundary + "--\r\n").encode())
+            req = urllib.request.Request(GOTENBERG + "/forms/libreoffice/convert", data=body,
+                headers={"Content-Type": "multipart/form-data; boundary=" + boundary})
+            with urllib.request.urlopen(req, timeout=120) as r:
+                data = r.read()
+            send_document(chat, data, "scan-" + stamp + ".pdf")
+        else:
+            send_document(chat, data, "scan-" + stamp + ".jpg")
+        say(chat, "Scan complete ✅ Sabre Imaging thanks you for your business.")
+    except Exception as e:
+        say(chat, "Scan failed: " + str(e))
+
 def broadcast(text):
     for c in ALLOWED:
         say(c, text)
@@ -259,18 +342,8 @@ def alert_loop():
         try:
             with urllib.request.urlopen(INK_URL, timeout=15) as r:
                 d = json.load(r)
-            try:
-                age_h = (datetime.datetime.now()
-                         - datetime.datetime.fromisoformat(d["updated"])).total_seconds() / 3600
-            except Exception:
-                age_h = 0
-            if age_h > 26 and state.get("_stale") != "stale":
-                broadcast("⚠️ Sabre Telemetry Notice: the ink readings stopped "
-                          + "updating " + str(int(age_h)) + "h ago — the report "
-                          + "cron on the Pi may be broken.")
-                state["_stale"] = "stale"
-            elif age_h <= 26:
-                state["_stale"] = "ok"
+            # no staleness alert by design: the printer is deliberately
+            # unplugged for long stretches; /ink shows the reading's age
             for s in d.get("supplies", []):
                 pct, name = s["percent"], s["name"]
                 band = "out" if pct <= 5 else "low" if pct <= 15 else "ok"
