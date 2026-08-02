@@ -15,6 +15,12 @@ variable "allowed_chat_ids" {
   default     = ""
 }
 
+variable "state_volume" {
+  description = "Docker named volume for dynamic membership state (invited members live here, not in the repo)."
+  type        = string
+  default     = "printbot_data"
+}
+
 variable "cups_server" {
   description = "CUPS server host:port the bot submits jobs to."
   type        = string
