@@ -19,6 +19,14 @@ job "printbot" {
             target = "/local/bot.py"
           }
         ]
+
+        # dynamic membership state (invites/joins) — named volume, outside
+        # the repo and outside the job spec; survives redeploys
+        mount {
+          type   = "volume"
+          target = "/data"
+          source = "[[ var "state_volume" . ]]"
+        }
       }
 
       template {
@@ -39,11 +47,32 @@ job "printbot" {
         destination = "local/bot.py"
         change_mode = "restart"
         data        = <<EOH
-import json, os, re, subprocess, tempfile, threading, time, urllib.request, urllib.parse
+import json, os, re, secrets as pysecrets, subprocess, tempfile, threading, time, urllib.request, urllib.parse
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 API = "https://api.telegram.org/bot" + TOKEN
-ALLOWED = {s.strip() for s in os.environ.get("ALLOWED_CHAT_IDS", "").split(",") if s.strip()}
+BASE_ALLOWED = {s.strip() for s in os.environ.get("ALLOWED_CHAT_IDS", "").split(",") if s.strip()}
+STATE_FILE = "/data/members.json"
+STATE_LOCK = threading.Lock()
+
+def load_state():
+    try:
+        with open(STATE_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {"members": {}, "invites": {}}
+
+def save_state(st):
+    tmp = STATE_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(st, f)
+    os.replace(tmp, STATE_FILE)
+
+def allowed_ids():
+    return BASE_ALLOWED | set(load_state()["members"].keys())
+
+def is_allowed(chat):
+    return chat in allowed_ids()
 CUPS = os.environ["CUPS_SERVER"]
 PRINTER = os.environ["PRINTER"]
 GOTENBERG = os.environ.get("GOTENBERG", "")
@@ -147,12 +176,70 @@ def watch_job_inner(chat, job, name):
 
 def handle(msg):
     chat = str(msg["chat"]["id"])
-    if chat not in ALLOWED:
+    text = msg.get("text", "")
+    name = (msg.get("from") or {}).get("first_name", "someone")
+    if text.startswith("/join"):
+        if is_allowed(chat):
+            say(chat, "You're already a valued Sabre customer.")
+            return
+        m = re.search(r"/join\s+(\S+)", text)
+        code = m.group(1) if m else ""
+        with STATE_LOCK:
+            st = load_state()
+            inv = st["invites"].get(code)
+            if not inv or inv["expires"] < time.time():
+                say(chat, "That invite code is invalid or expired. "
+                         + "Ask a Sabre customer for a fresh /invite.")
+                return
+            del st["invites"][code]
+            st["members"][chat] = {"name": name, "invited_by": inv["by"],
+                                   "joined": time.strftime("%Y-%m-%d")}
+            save_state(st)
+        say(chat, "Welcome to Sabre Printing Solutions, " + name
+                 + "! It's pronounced 'SAH-bray.' Send me anything to print, "
+                 + "or /help for the full suite.")
+        broadcast(name + " (" + chat + ") joined via invite 🎟")
+        return
+    if not is_allowed(chat):
         say(chat, "You are not an authorized Sabre customer. "
                  + "This incident will be reported to Jo Bennett. "
-                 + "(Your chat id is " + chat + ")")
+                 + "(Your chat id is " + chat + " — an existing customer "
+                 + "can /invite you.)")
         return
-    text = msg.get("text", "")
+    if text.startswith("/invite"):
+        code = pysecrets.token_urlsafe(6)
+        with STATE_LOCK:
+            st = load_state()
+            st["invites"] = {c: i for c, i in st["invites"].items()
+                             if i["expires"] > time.time()}
+            st["invites"][code] = {"by": chat, "expires": time.time() + 86400}
+            save_state(st)
+        say(chat, "🎟 Invite code (valid 24h, single use):\n\n" + code
+                 + "\n\nHave them message me:  /join " + code)
+        return
+    if text.startswith("/members"):
+        st = load_state()
+        lines = [i + " (from vars file)" for i in sorted(BASE_ALLOWED)]
+        lines += [c + " — " + m["name"] + ", joined " + m["joined"]
+                  for c, m in sorted(st["members"].items())]
+        say(chat, "👥 Sabre Customer Registry:\n" + "\n".join(lines))
+        return
+    if text.startswith("/revoke"):
+        m = re.search(r"/revoke\s+(\S+)", text)
+        target = m.group(1) if m else ""
+        with STATE_LOCK:
+            st = load_state()
+            if target in st["members"]:
+                gone = st["members"].pop(target)
+                save_state(st)
+                say(chat, "Revoked " + gone["name"] + " (" + target + "). "
+                         + "Sabre wishes them well in their future endeavors.")
+            elif target in BASE_ALLOWED:
+                say(chat, "That member is set in the vars file — remove them "
+                         + "there and redeploy.")
+            else:
+                say(chat, "Usage: /revoke CHAT_ID  (see /members)")
+        return
     if text.startswith("/help"):
         say(chat, "📋 Sabre Command Suite (it's pronounced 'SAH-bray'):\n\n"
                  + "Send any file or photo — prints it\n"
@@ -162,6 +249,9 @@ def handle(msg):
                  + "/ink — cartridge levels\n"
                  + "/cancel N — cancel job N\n"
                  + "/clear — cancel every waiting job\n"
+                 + "/invite — one-time code to add someone\n"
+                 + "/members — who's allowed\n"
+                 + "/revoke ID — remove an invited member\n"
                  + "/help — this list")
         return
     if text.startswith("/scan"):
@@ -332,7 +422,7 @@ def do_scan(chat, want_pdf):
         say(chat, "Scan failed: " + str(e))
 
 def broadcast(text):
-    for c in ALLOWED:
+    for c in allowed_ids():
         say(c, text)
 
 def alert_loop():

@@ -57,3 +57,13 @@ and run by root cron every 6h (`17 */6 * * *`). It reads `hp-levels` (root-only
 USB access), writes `/home/dwight/ink.json`, which the dashboard nginx serves
 at `/ink.json` — the bot's `/ink` command and anything else can read it there.
 hpcups never reports marker levels to CUPS for this model, hence the sidecar.
+
+## Membership & invites
+
+The repo stays generic: no chat IDs or tokens live here. Bootstrap members come
+from gitignored `vars/printbot.hcl` (`allowed_chat_ids`); everyone else joins at
+runtime — an existing member runs `/invite` (one-time code, 24h expiry), the
+newcomer sends `/join CODE`. Dynamic members persist in the `printbot_data`
+docker volume (`/data/members.json`), outside both repo and job spec. Joins are
+broadcast to all members; `/members` lists everyone, `/revoke ID` removes
+invited members (vars-file members are removed in the vars file).
