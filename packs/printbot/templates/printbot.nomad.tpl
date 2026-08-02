@@ -39,7 +39,7 @@ job "printbot" {
         destination = "local/bot.py"
         change_mode = "restart"
         data        = <<EOH
-import json, os, subprocess, tempfile, time, urllib.request, urllib.parse
+import json, os, re, subprocess, tempfile, threading, time, urllib.request, urllib.parse
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 API = "https://api.telegram.org/bot" + TOKEN
@@ -91,7 +91,24 @@ def print_file(path, title):
                        capture_output=True, text=True, timeout=30)
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip())
-    return r.stdout.strip()
+    m = re.search(r"request id is (\S+)", r.stdout)
+    return m.group(1) if m else r.stdout.strip()
+
+def watch_job(chat, job, name):
+    # follow the job until it leaves the queue; nudge if it lingers
+    nudged = False
+    for i in range(360):  # up to ~12h
+        time.sleep(10 if i < 30 else 120)
+        r = subprocess.run(["lpstat", "-h", CUPS, "-o"],
+                           capture_output=True, text=True, timeout=15)
+        if job not in r.stdout:
+            say(chat, "Printed: " + name + " ✅")
+            return
+        if not nudged and i >= 12:
+            say(chat, "Still in the queue — printer off? It will print "
+                     + "automatically once it is powered on.")
+            nudged = True
+    say(chat, "Gave up watching " + name + " — check /status.")
 
 def handle(msg):
     chat = str(msg["chat"]["id"])
@@ -139,7 +156,8 @@ def handle(msg):
             pdf_tmp = to_pdf(tmp, name)
             target = pdf_tmp
         job = print_file(target, name)
-        say(chat, "Queued: " + job + "\n(prints when the printer is on)")
+        say(chat, "Sent to printer as job " + job.rsplit("-", 1)[-1] + " 🖨️")
+        threading.Thread(target=watch_job, args=(chat, job, name), daemon=True).start()
     except Exception as e:
         say(chat, "Print failed: " + str(e))
     finally:
