@@ -11,7 +11,7 @@ job "printbot" {
       config {
         image   = "python:3.12-alpine"
         command = "sh"
-        args    = ["-c", "apk add --no-cache cups-client >/dev/null 2>&1; apk add --no-cache cups-ipptool >/dev/null 2>&1; exec python /local/bot.py"]
+        args    = ["-c", "apk add --no-cache cups-client >/dev/null 2>&1; exec python /local/bot.py"]
         mounts = [
           {
             type   = "bind"
@@ -39,7 +39,7 @@ job "printbot" {
         destination = "local/bot.py"
         change_mode = "restart"
         data        = <<EOH
-import json, os, re, shutil, subprocess, tempfile, threading, time, urllib.request, urllib.parse
+import json, os, re, subprocess, tempfile, threading, time, urllib.request, urllib.parse
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 API = "https://api.telegram.org/bot" + TOKEN
@@ -47,6 +47,7 @@ ALLOWED = {s.strip() for s in os.environ.get("ALLOWED_CHAT_IDS", "").split(",") 
 CUPS = os.environ["CUPS_SERVER"]
 PRINTER = os.environ["PRINTER"]
 GOTENBERG = os.environ.get("GOTENBERG", "")
+INK_URL = os.environ.get("INK_URL", "http://100.116.81.88/ink.json")
 OK_MIME = ("application/pdf", "image/jpeg", "image/png", "text/plain")
 CONVERT_EXT = (".docx", ".doc", ".odt", ".xlsx", ".xls", ".ods",
                ".pptx", ".ppt", ".odp", ".rtf")
@@ -183,29 +184,15 @@ def handle(msg):
         return
     if text.startswith("/ink"):
         try:
-            if not shutil.which("ipptool"):
-                say(chat, "Ink readout isn't available on this build.")
-                return
-            test = "/tmp/ink.test"
-            with open(test, "w") as f:
-                f.write('{ OPERATION Get-Printer-Attributes\n'
-                        '  GROUP operation-attributes-tag\n'
-                        '  ATTR charset attributes-charset utf-8\n'
-                        '  ATTR naturalLanguage attributes-natural-language en\n'
-                        '  ATTR uri printer-uri $uri\n'
-                        '  DISPLAY marker-names\n  DISPLAY marker-levels\n}\n')
-            r = subprocess.run(["ipptool", "-tv",
-                                "ipp://" + CUPS + "/printers/" + PRINTER, test],
-                               capture_output=True, text=True, timeout=20)
-            names = re.search(r"marker-names .*= (.*)", r.stdout)
-            levels = re.search(r"marker-levels .*= (.*)", r.stdout)
-            if names and levels:
-                pairs = zip([n.strip() for n in names.group(1).split(",")],
-                            [l.strip() for l in levels.group(1).split(",")])
-                say(chat, "🖋 Sabre Ink Audit:\n"
-                         + "\n".join(n + ": " + l + "%" for n, l in pairs))
-            else:
-                say(chat, "No ink reading yet — print something first.")
+            with urllib.request.urlopen(INK_URL, timeout=15) as r:
+                d = json.load(r)
+            bars = []
+            for s in d.get("supplies", []):
+                pct = s["percent"]
+                bar = "▓" * (pct // 10) + "░" * (10 - pct // 10)
+                bars.append(s["name"] + "\n" + bar + " " + str(pct) + "%  (" + s["health"] + ")")
+            say(chat, "🖋 Sabre Ink Audit (as of " + d.get("updated", "?") + "):\n\n"
+                     + "\n\n".join(bars))
         except Exception as e:
             say(chat, "Ink check failed: " + str(e))
         return

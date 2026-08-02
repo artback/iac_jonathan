@@ -49,3 +49,11 @@ printer comes back.
   the queue.
 - UFW: 631/tcp on eth0 + tailscale0, 5353/udp on eth0.
 - cupsd.conf: `Allow from 100.64.0.0/10` in `<Location />` for tailnet printing.
+
+## Ink levels pipeline
+
+`files/ink-report.sh` is installed on the host at `/usr/local/bin/ink-report.sh`
+and run by root cron every 6h (`17 */6 * * *`). It reads `hp-levels` (root-only
+USB access), writes `/home/dwight/ink.json`, which the dashboard nginx serves
+at `/ink.json` — the bot's `/ink` command and anything else can read it there.
+hpcups never reports marker levels to CUPS for this model, hence the sidecar.
