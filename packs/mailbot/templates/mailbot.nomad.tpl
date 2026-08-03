@@ -322,6 +322,14 @@ def rebuild_top(c):
     with open(VAULT + "/Top Jobs.md", "w") as f:
         f.write("\n".join(lines) + "\n")
 
+def uid_search(imap, criterion):
+    """UID search returning a list of ints. Some servers (iCloud) answer a
+    no-match search with [None] rather than [b''], hence the guard."""
+    _, data = imap.uid("search", None, criterion)
+    if not data or not data[0]:
+        return []
+    return [int(x) for x in data[0].split()]
+
 def poll(c):
     imap = imaplib.IMAP4_SSL(HOST)
     try:
@@ -330,15 +338,12 @@ def poll(c):
         last = meta_get(c, "last_uid")
         if not last:
             # first run: baseline at current newest UID, don't classify backlog
-            _, data = imap.uid("search", None, "ALL")
-            uids = data[0].split()
-            meta_set(c, "last_uid", int(uids[-1]) if uids else 0)
+            uids = uid_search(imap, "ALL")
+            meta_set(c, "last_uid", uids[-1] if uids else 0)
             say("📬 Mail triage is live — watching " + USER + " from now on.")
             return
-        _, data = imap.uid("search", None, "UID " + str(int(last) + 1) + ":*")
         llm_budget = MAX_LLM_PER_CYCLE
-        for uid_b in data[0].split():
-            uid = int(uid_b)
+        for uid in uid_search(imap, "UID " + str(int(last) + 1) + ":*"):
             if uid <= int(last):
                 continue
             if llm_budget <= 0:
