@@ -42,7 +42,7 @@ job "mediabot" {
         destination = "local/bot.py"
         change_mode = "restart"
         data        = <<EOH
-import json, os, time, urllib.request, urllib.parse
+import json, os, re, time, urllib.request, urllib.parse
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 API = "https://api.telegram.org/bot" + TOKEN
@@ -160,6 +160,49 @@ def upcoming(chat):
             out.append(a["icon"] + " calendar unavailable: " + str(e))
     say(chat, "🗓 Next 7 days:\n" + ("\n".join(out) if out else "nothing scheduled"))
 
+def slug_to_term(slug):
+    # trakt/letterboxd slugs: "dune-part-two-2024" -> "dune part two 2024"
+    return slug.replace("-", " ").strip()
+
+def resolve_link(chat, text):
+    # Returns True if the text contained a recognizable media link.
+    m = re.search(r"\b(tt\d{6,10})\b", text)
+    if m:
+        imdb = m.group(1)
+        try:
+            if arr_get(ARR["m"], "/movie/lookup?term=imdb:" + imdb):
+                search(chat, "m", "imdb:" + imdb)
+                return True
+        except Exception:
+            pass
+        try:
+            if arr_get(ARR["s"], "/series/lookup?term=imdb:" + imdb):
+                search(chat, "s", "imdb:" + imdb)
+                return True
+        except Exception:
+            pass
+        say(chat, "Found IMDb id " + imdb + " but neither Radarr nor Sonarr "
+                 + "recognize it — is it a short/episode link?")
+        return True
+    m = re.search(r"themoviedb\.org/(movie|tv)/(\d+)(?:-([\w-]+))?", text)
+    if m:
+        kind, tmdb_id, slug = m.groups()
+        if kind == "movie":
+            search(chat, "m", "tmdb:" + tmdb_id)
+        else:
+            search(chat, "s", slug_to_term(slug) if slug else "tmdb:" + tmdb_id)
+        return True
+    m = re.search(r"trakt\.tv/(movies|shows)/([\w-]+)", text)
+    if m:
+        kind, slug = m.groups()
+        search(chat, "m" if kind == "movies" else "s", slug_to_term(slug))
+        return True
+    m = re.search(r"letterboxd\.com/film/([\w-]+)", text)
+    if m:
+        search(chat, "m", slug_to_term(m.group(1)))
+        return True
+    return False
+
 def handle_message(msg):
     chat = str(msg["chat"]["id"])
     if chat not in ALLOWED:
@@ -183,7 +226,10 @@ def handle_message(msg):
                      + "/series TITLE — search & add to Sonarr\n"
                      + "/queue — current downloads\n"
                      + "/upcoming — next 7 days\n\n"
-                     + "Or just send a title and I'll search movies + series.")
+                     + "Or just send a title — or paste an IMDb / TMDb / "
+                     + "Trakt / Letterboxd link and I'll decode it.")
+        elif resolve_link(chat, text):
+            pass
         else:
             # bare title: search both, movies first
             search(chat, "m", text)

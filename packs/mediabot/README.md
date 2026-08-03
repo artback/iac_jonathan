@@ -28,3 +28,11 @@ sonarr_api_key   = "..."   # Sonarr → Settings → General
 ```
 
 Deploy: `nomad-pack run packs/mediabot -f vars/mediabot.hcl`
+
+## Link decoding
+
+Paste a link (alone or inside a share message) and the bot resolves it:
+- **IMDb** (`tt…` anywhere in the text) — exact-ID lookup, Radarr first, Sonarr fallback
+- **TMDb** movie/tv URLs — exact ID for movies, slug title for TV
+- **Trakt** movie/show URLs — slug title on the right instance
+- **Letterboxd** film URLs — slug title in Radarr
