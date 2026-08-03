@@ -412,6 +412,71 @@
             color: var(--muted);
         }
 
+        .mail-section { margin-top: 28px; }
+
+        .mail-card {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--surface);
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .mail-headline {
+            display: flex;
+            gap: 16px;
+            font-family: var(--mono);
+            font-variant-numeric: tabular-nums;
+            font-size: 0.75rem;
+            color: var(--muted);
+            flex-wrap: wrap;
+        }
+
+        .mail-headline b { color: var(--text); font-weight: 500; }
+
+        .mail-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 3px;
+            height: 36px;
+        }
+
+        .mail-bars div {
+            flex: 1;
+            background: var(--accent-dim);
+            border-top: 2px solid var(--accent);
+            border-radius: 2px 2px 0 0;
+            min-height: 2px;
+        }
+
+        .mail-cats { display: flex; flex-direction: column; gap: 4px; }
+
+        .mail-cat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+
+        .mail-cat .bar {
+            height: 5px;
+            background: var(--accent);
+            opacity: 0.65;
+            border-radius: 3px;
+        }
+
+        .mail-cat .n { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+        .mail-senders {
+            font-size: 0.7rem;
+            color: var(--muted);
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+        }
+
         @media (max-width: 980px) {
             main { grid-template-columns: 1fr; gap: 32px; }
             .topbar-inner { flex-wrap: wrap; gap: 12px; padding: 12px 20px; }
@@ -460,6 +525,15 @@
             </div>
             <div class="news-list" id="news-list">
                 <div class="news-empty" id="news-empty">Loading…</div>
+            </div>
+            <div class="mail-section" id="mail-section" hidden>
+                <div class="rail-head"><h2>Mail — last 30 days</h2></div>
+                <div class="mail-card">
+                    <div class="mail-headline" id="mail-headline"></div>
+                    <div class="mail-bars" id="mail-bars" title="emails per day, last 14 days"></div>
+                    <div class="mail-cats" id="mail-cats"></div>
+                    <div class="mail-senders" id="mail-senders"></div>
+                </div>
             </div>
         </aside>
     </main>
@@ -812,10 +886,55 @@
                 .catch(() => {});
         }
 
+        function loadMailStats() {
+            fetch('/mailstats/mailstats.json')
+                .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+                .then(d => {
+                    if (!d.total30d) return;
+                    document.getElementById('mail-headline').innerHTML =
+                        '<span><b>' + d.total30d + '</b> emails</span>' +
+                        '<span><b>' + d.robot_pct + '%</b> robots</span>' +
+                        '<span><b>' + d.urgent7d + '</b> urgent this week</span>';
+                    const bars = document.getElementById('mail-bars');
+                    bars.innerHTML = '';
+                    const max = Math.max(...d.daily.map(x => x.count), 1);
+                    for (const x of d.daily) {
+                        const b = document.createElement('div');
+                        b.style.height = Math.max(6, x.count / max * 100) + '%';
+                        b.title = x.day + ': ' + x.count;
+                        bars.appendChild(b);
+                    }
+                    const cats = document.getElementById('mail-cats');
+                    cats.innerHTML = '';
+                    const entries = Object.entries(d.categories).sort((a, b) => b[1] - a[1]);
+                    const cmax = entries.length ? entries[0][1] : 1;
+                    for (const entry of entries) {
+                        const row = document.createElement('div');
+                        row.className = 'mail-cat';
+                        const bar = document.createElement('span');
+                        bar.className = 'bar';
+                        bar.style.width = Math.max(4, entry[1] / cmax * 90) + 'px';
+                        const label = document.createElement('span');
+                        label.textContent = entry[0];
+                        const n = document.createElement('span');
+                        n.className = 'n';
+                        n.textContent = entry[1];
+                        row.append(bar, label, n);
+                        cats.appendChild(row);
+                    }
+                    document.getElementById('mail-senders').textContent =
+                        'Top senders: ' + d.top_senders.map(s => s.sender + ' (' + s.count + ')').join(' · ');
+                    document.getElementById('mail-section').hidden = false;
+                })
+                .catch(() => {});
+        }
+
         loadHealth();
         loadStats();
+        loadMailStats();
         setInterval(loadHealth, 30000);
         setInterval(loadStats, 30000);
+        setInterval(loadMailStats, 120000);
     </script>
 </body>
 </html>

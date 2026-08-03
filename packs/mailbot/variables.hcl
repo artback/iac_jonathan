@@ -50,6 +50,38 @@ variable "digest_hour" {
   default     = 8
 }
 
+variable "categories" {
+  description = "Classification categories: name → description fed to the LLM prompt."
+  type        = map(string)
+  default = {
+    urgent     = "requires action or reply soon, deadlines, appointments, legal or contractual matters"
+    job        = "job opportunities, recruiter outreach, application updates, interview scheduling"
+    finance    = "bills, invoices, bank and payment notifications, taxes, insurance"
+    personal   = "personal correspondence from real people"
+    orders     = "order confirmations, shipping and delivery updates"
+    newsletter = "newsletters, marketing, product updates, automated digests"
+    other      = "anything that fits none of the above"
+  }
+}
+
+variable "tracked" {
+  description = "Categories that get detail extraction, an Obsidian note and a spot on the ranked top list."
+  type        = list(string)
+  default     = ["job"]
+}
+
+variable "profile" {
+  description = "Who the fit score is scored against — edit to taste in vars."
+  type        = string
+  default     = "Software / platform engineer (Go, Kubernetes, Nomad, infrastructure), based in Marseille, open to remote EU roles."
+}
+
+variable "vault_dir" {
+  description = "Host path of the Obsidian vault. Bot writes ONLY under '<vault>/Mail Triage/'."
+  type        = string
+  default     = "/home/dwight/Job applications"
+}
+
 variable "state_volume" {
   description = "Docker named volume for the sqlite triage log."
   type        = string

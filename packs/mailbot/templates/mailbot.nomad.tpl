@@ -25,6 +25,13 @@ job "mailbot" {
           target = "/data"
           source = "[[ var "state_volume" . ]]"
         }
+
+        # Obsidian vault — bot writes only under /vault/Mail Triage/
+        # Stats dir — dashboard nginx serves mailstats.json from here
+        volumes = [
+          "[[ var "vault_dir" . ]]:/vault",
+          "/home/dwight/mailstats:/statsout",
+        ]
       }
 
       env {
@@ -44,6 +51,9 @@ job "mailbot" {
           OLLAMA_URL="[[ var "ollama_url" . ]]"
           MODEL="[[ var "model" . ]]"
           DIGEST_HOUR="[[ var "digest_hour" . ]]"
+          CATEGORIES="[[ range $k, $v := (var "categories" .) ]][[ $k ]]=[[ $v ]]|[[ end ]]"
+          TRACKED="[[ range $t := (var "tracked" .) ]][[ $t ]],[[ end ]]"
+          PROFILE="[[ var "profile" . ]]"
         EOH
       }
 
@@ -65,7 +75,17 @@ OLLAMA = os.environ["OLLAMA_URL"]
 MODEL = os.environ["MODEL"]
 DIGEST_HOUR = int(os.environ.get("DIGEST_HOUR", "8"))
 DB = "/data/mail.db"
-CATS = ("urgent", "job", "finance", "personal", "orders", "newsletter", "other")
+CATS = {}
+for pair in os.environ.get("CATEGORIES", "").split("|"):
+    if "=" in pair:
+        k, v = pair.split("=", 1)
+        CATS[k.strip()] = v.strip()
+if not CATS:
+    CATS = {"other": "anything"}
+TRACKED = {t.strip() for t in os.environ.get("TRACKED", "").split(",") if t.strip()}
+PROFILE = os.environ.get("PROFILE", "")
+VAULT = "/vault/Mail Triage"
+STAGES = ("outreach", "applied", "interview", "rejected", "offer", "update")
 ICONS = {"urgent": "🚨", "job": "💼", "finance": "💶", "personal": "💬",
          "orders": "📦", "newsletter": "📰", "other": "✉️"}
 
@@ -74,6 +94,9 @@ def db():
     c.execute("CREATE TABLE IF NOT EXISTS mail (uid INTEGER PRIMARY KEY, ts INTEGER, "
               "sender TEXT, subject TEXT, category TEXT, importance TEXT, summary TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS leads (key TEXT PRIMARY KEY, ts INTEGER, "
+              "company TEXT, role TEXT, location TEXT, deadline TEXT, stage TEXT, "
+              "score INTEGER, reason TEXT, summary TEXT)")
     return c
 
 def meta_get(c, k, default=""):
@@ -119,23 +142,93 @@ def body_text(msg):
     except Exception:
         return ""
 
-def classify(sender, subject, body):
-    prompt = ("Classify this email. Reply ONLY with JSON: "
-              '{"category": one of [urgent,job,finance,personal,orders,newsletter,other], '
-              '"importance": one of [high,normal,low], '
-              '"summary": one sentence max 15 words}.'
-              + "\n\nFrom: " + sender + "\nSubject: " + subject
-              + "\nBody: " + body[:1500])
+def llm(prompt):
     req = urllib.request.Request(OLLAMA + "/api/generate",
         data=json.dumps({"model": MODEL, "stream": False, "format": "json",
                          "prompt": prompt}).encode(),
         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=300) as r:
-        result = json.loads(json.load(r)["response"])
+        return json.loads(json.load(r)["response"])
+
+def classify(sender, subject, body):
+    cat_lines = "\n".join("- " + k + ": " + v for k, v in CATS.items())
+    result = llm("Classify this email into exactly one category:\n" + cat_lines
+                 + '\n\nReply ONLY with JSON: {"category": "<name>", '
+                 '"importance": one of [high,normal,low], '
+                 '"summary": one sentence max 15 words}.'
+                 + "\n\nFrom: " + sender + "\nSubject: " + subject
+                 + "\nBody: " + body[:1500])
     cat = result.get("category") if result.get("category") in CATS else "other"
     imp = result.get("importance") if result.get("importance") in ("high", "normal", "low") else "normal"
     summary = str(result.get("summary") or subject)[:200]
     return cat, imp, summary
+
+def safe_name(s):
+    return "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in s).strip()[:80] or "unknown"
+
+def track_lead(c, sender, subject, body, summary):
+    r = llm("You are tracking a job search for this person: " + PROFILE
+            + "\nAnalyze this job-related email. Reply ONLY with JSON: "
+            '{"company": string, "role": string, "location": string, '
+            '"deadline": string or empty, '
+            '"stage": one of [outreach,applied,interview,rejected,offer,update], '
+            '"fit_score": integer 0-100 for how well it fits the person, '
+            '"reason": max 20 words why that score}.'
+            + "\n\nFrom: " + sender + "\nSubject: " + subject + "\nBody: " + body[:1500])
+    company = str(r.get("company") or "Unknown")[:60]
+    role = str(r.get("role") or "Unknown role")[:80]
+    stage = r.get("stage") if r.get("stage") in STAGES else "update"
+    score = max(0, min(100, int(r.get("fit_score") or 0)))
+    key = safe_name(company).lower() + "|" + safe_name(role).lower()
+    c.execute("INSERT INTO leads (key, ts, company, role, location, deadline, stage, score, reason, summary) "
+              "VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET "
+              "ts=excluded.ts, stage=excluded.stage, deadline=excluded.deadline, summary=excluded.summary",
+              (key, int(time.time()), company, role, str(r.get("location") or "")[:60],
+               str(r.get("deadline") or "")[:40], stage, score,
+               str(r.get("reason") or "")[:200], summary))
+    c.commit()
+    note_path = VAULT + "/" + safe_name(company) + " - " + safe_name(role) + ".md"
+    stamp = time.strftime("%Y-%m-%d")
+    if not os.path.exists(note_path):
+        os.makedirs(VAULT, exist_ok=True)
+        with open(note_path, "w") as f:
+            f.write("---\ncompany: " + company + "\nrole: " + role
+                    + "\nlocation: " + str(r.get("location") or "") + "\nfit: " + str(score)
+                    + "\nstage: " + stage + "\ncreated: " + stamp + "\n---\n\n"
+                    + "# " + company + " — " + role + "\n\n"
+                    + "Fit " + str(score) + "/100 — " + str(r.get("reason") or "") + "\n\n## Timeline\n")
+    with open(note_path, "a") as f:
+        f.write("- " + stamp + " **" + stage + "** — " + summary + "\n")
+    rebuild_top(c)
+    return company, role, stage, score
+
+def rebuild_top(c):
+    rows = c.execute("SELECT company, role, location, deadline, stage, score, ts "
+                     "FROM leads ORDER BY score DESC").fetchall()
+    now = int(time.time())
+    week = sum(1 for x in rows if now - x[6] < 7 * 86400)
+    by_stage = {}
+    for x in rows:
+        by_stage[x[4]] = by_stage.get(x[4], 0) + 1
+    responded = sum(by_stage.get(s, 0) for s in ("interview", "rejected", "offer"))
+    active = sum(1 for x in rows if x[4] not in ("rejected",))
+    stats = ("**" + str(len(rows)) + " leads** · " + str(active) + " active · "
+             + str(week) + " touched this week · "
+             + " / ".join(str(by_stage.get(s, 0)) + " " + s for s in STAGES if by_stage.get(s)))
+    if by_stage.get("applied") or responded:
+        total_applied = by_stage.get("applied", 0) + responded
+        stats += " · response rate " + str(int(100 * responded / max(1, total_applied))) + "%"
+    lines = ["# Top Jobs (auto)", "", "> " + stats, "",
+             "| Fit | Company | Role | Stage | Deadline |", "|---|---|---|---|---|"]
+    for company, role, loc, deadline, stage, score, ts in rows:
+        name = safe_name(company) + " - " + safe_name(role)
+        wiki_open, wiki_close = "[" + "[", "]" + "]"  # avoid literal pack delimiters
+        cell = "~~" + company + "~~" if stage == "rejected" else wiki_open + name + "|" + company + wiki_close
+        lines.append("| " + str(score) + " | " + cell + " | " + role + " | "
+                     + stage + " | " + (deadline or "—") + " |")
+    os.makedirs(VAULT, exist_ok=True)
+    with open(VAULT + "/Top Jobs.md", "w") as f:
+        f.write("\n".join(lines) + "\n")
 
 def poll(c):
     imap = imaplib.IMAP4_SSL(HOST)
@@ -203,6 +296,46 @@ def digest(c):
             msg += "• " + s + "\n"
     say(msg[:4000])
 
+def write_stats(c):
+    now = int(time.time())
+    month = now - 30 * 86400
+    rows = c.execute("SELECT ts, sender, category, importance FROM mail WHERE ts > ?",
+                     (month,)).fetchall()
+    days = {}
+    cats = {}
+    senders = {}
+    urgent7 = 0
+    for ts, sender, cat, imp in rows:
+        day = time.strftime("%Y-%m-%d", time.localtime(ts))
+        days[day] = days.get(day, 0) + 1
+        cats[cat] = cats.get(cat, 0) + 1
+        addr = sender.split("<")[-1].rstrip(">").strip() or sender
+        senders[addr] = senders.get(addr, 0) + 1
+        if (imp == "high" or cat == "urgent") and now - ts < 7 * 86400:
+            urgent7 += 1
+    total = len(rows)
+    robots = cats.get("newsletter", 0) + cats.get("orders", 0)
+    top = sorted(senders.items(), key=lambda kv: -kv[1])[:5]
+    series = []
+    for i in range(13, -1, -1):
+        day = time.strftime("%Y-%m-%d", time.localtime(now - i * 86400))
+        series.append({"day": day[5:], "count": days.get(day, 0)})
+    stats = {
+        "updated": time.strftime("%Y-%m-%dT%H:%M"),
+        "total30d": total,
+        "robot_pct": int(100 * robots / total) if total else 0,
+        "urgent7d": urgent7,
+        "categories": cats,
+        "top_senders": [{"sender": s, "count": n} for s, n in top],
+        "daily": series,
+    }
+    os.makedirs("/statsout", exist_ok=True)
+    with open("/statsout/mailstats.json.tmp", "w") as f:
+        json.dump(stats, f)
+    with open("/statsout/mailstats.json.tmp") as src, open("/statsout/mailstats.json", "w") as dst:
+        dst.write(src.read())
+    os.unlink("/statsout/mailstats.json.tmp")
+
 def main():
     c = db()
     while True:
@@ -214,6 +347,10 @@ def main():
             digest(c)
         except Exception as e:
             print("digest error:", e, flush=True)
+        try:
+            write_stats(c)
+        except Exception as e:
+            print("stats error:", e, flush=True)
         time.sleep(120)
 
 main()

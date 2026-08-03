@@ -59,6 +59,7 @@ job "Dashboard" {
         volumes = [
           "/etc/certs/prometheus:/certs",
           "/home/dwight/ink.json:/usr/share/nginx/html/ink.json",
+          "/home/dwight/mailstats:/usr/share/nginx/html/mailstats",
         ]
       }
 
