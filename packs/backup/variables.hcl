@@ -45,5 +45,7 @@ variable "app_state_paths" {
     searxng         = "/var/lib/docker/volumes/searxng_data/_data"
     abs-config      = "/var/lib/docker/volumes/abs_config/_data"
     abs-metadata    = "/var/lib/docker/volumes/abs_metadata/_data"
+    printbot        = "/var/lib/docker/volumes/printbot_data/_data"
+    mailbot         = "/var/lib/docker/volumes/mailbot_data/_data"
   }
 }
