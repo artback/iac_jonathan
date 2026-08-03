@@ -113,11 +113,13 @@ def search(chat, which, term):
             caption += "\n\n✓ Already in the library"
             keyboard = None
         elif which == "m":
-            keyboard = [[{"text": "➕ Add to Radarr", "callback_data": "add:m:" + str(ext_id)}]]
+            # note: nested lists are written [ [ … ] ] — a literal [[ would
+            # be parsed as a nomad-pack template delimiter
+            keyboard = [ [{"text": "➕ Add to Radarr", "callback_data": "add:m:" + str(ext_id)}] ]
         else:
-            keyboard = [[{"text": "➕ All seasons", "callback_data": "adds:" + str(ext_id) + ":all"}],
-                        [{"text": "➕ Latest season only", "callback_data": "adds:" + str(ext_id) + ":latestSeason"}],
-                        [{"text": "➕ Future episodes only", "callback_data": "adds:" + str(ext_id) + ":future"}]]
+            keyboard = [ [{"text": "➕ All seasons", "callback_data": "adds:" + str(ext_id) + ":all"}],
+                         [{"text": "➕ Latest season only", "callback_data": "adds:" + str(ext_id) + ":latestSeason"}],
+                         [{"text": "➕ Future episodes only", "callback_data": "adds:" + str(ext_id) + ":future"}] ]
         poster = r.get("remotePoster")
         try:
             if poster:
