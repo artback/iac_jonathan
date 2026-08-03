@@ -72,3 +72,8 @@ Two controls keep that sane:
   processed mail, so nothing is skipped.
 
 `mailstats.json` reports `llm_calls` vs `llm_skipped` so the saving is visible.
+
+**RAM:** llama3.2:3b holds ~2.5GB resident while loaded. Ollama's 5-minute
+default keep-alive plus 2-minute polling would pin that permanently on a box
+running ~20 other services, so every call passes `keep_alive` (default `30s`,
+the `keep_alive` var) — measured to release the memory promptly between bursts.

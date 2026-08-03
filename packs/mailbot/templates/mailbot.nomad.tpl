@@ -50,6 +50,7 @@ job "mailbot" {
           CHAT_ID="[[ var "chat_id" . ]]"
           OLLAMA_URL="[[ var "ollama_url" . ]]"
           MODEL="[[ var "model" . ]]"
+          KEEP_ALIVE="[[ var "keep_alive" . ]]"
           DIGEST_HOUR="[[ var "digest_hour" . ]]"
           CATEGORIES="[[ range $k, $v := (var "categories" .) ]][[ $k ]]=[[ $v ]]|[[ end ]]"
           TRACKED="[[ range $t := (var "tracked" .) ]][[ $t ]],[[ end ]]"
@@ -86,6 +87,7 @@ TRACKED = {t.strip() for t in os.environ.get("TRACKED", "").split(",") if t.stri
 PROFILE = os.environ.get("PROFILE", "")
 VAULT = "/vault/Mail Triage"
 MAX_LLM_PER_CYCLE = 10
+KEEP_ALIVE = os.environ.get("KEEP_ALIVE", "30s")
 STAGES = ("outreach", "applied", "interview", "rejected", "offer", "update")
 ICONS = {"urgent": "🚨", "job": "💼", "finance": "💶", "personal": "💬",
          "orders": "📦", "travel": "✈️", "newsletter": "📰", "marketing": "🔇",
@@ -155,9 +157,13 @@ def body_text(msg):
         return ""
 
 def llm(prompt):
+    # keep_alive is short on purpose: the 3B model holds ~2.5GB resident, and
+    # this Pi runs ~20 other services. Ollama's 5-minute default plus 2-minute
+    # polling would pin that RAM permanently; 30s frees it between bursts at
+    # the price of a few seconds' reload.
     req = urllib.request.Request(OLLAMA + "/api/generate",
         data=json.dumps({"model": MODEL, "stream": False, "format": "json",
-                         "prompt": prompt}).encode(),
+                         "keep_alive": KEEP_ALIVE, "prompt": prompt}).encode(),
         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=300) as r:
         return json.loads(json.load(r)["response"])
