@@ -58,8 +58,10 @@ variable "categories" {
     job        = "job opportunities, recruiter outreach, application updates, interview scheduling"
     finance    = "bills, invoices, bank and payment notifications, taxes, insurance"
     personal   = "personal correspondence from real people"
-    orders     = "order confirmations, shipping and delivery updates"
-    newsletter = "newsletters, marketing, product updates, automated digests"
+    orders     = "order confirmations, shipping and delivery updates, tracking numbers"
+    travel     = "flight, train, bus or ferry bookings, confirmations, check-in, schedule changes"
+    newsletter = "content newsletters and digests the person chose to receive"
+    marketing  = "pure advertising, promotions, sales, spam-adjacent mail"
     other      = "anything that fits none of the above"
   }
 }

@@ -87,7 +87,14 @@ PROFILE = os.environ.get("PROFILE", "")
 VAULT = "/vault/Mail Triage"
 STAGES = ("outreach", "applied", "interview", "rejected", "offer", "update")
 ICONS = {"urgent": "🚨", "job": "💼", "finance": "💶", "personal": "💬",
-         "orders": "📦", "newsletter": "📰", "other": "✉️"}
+         "orders": "📦", "travel": "✈️", "newsletter": "📰", "marketing": "🔇",
+         "other": "✉️"}
+NOISE = {"newsletter", "marketing"}
+EXTRACT_SCHEMAS = {
+    "orders": '{"carrier": string, "tracking_number": string or empty, "eta": string or empty, "merchant": string}',
+    "travel": '{"mode": one of [flight,train,bus,ferry], "carrier": string, "number": string, "date": string, "from": string, "to": string, "reference": string or empty}',
+    "finance": '{"payee": string, "amount": string or empty, "due_date": string or empty}',
+}
 
 def db():
     c = sqlite3.connect(DB)
@@ -97,6 +104,10 @@ def db():
     c.execute("CREATE TABLE IF NOT EXISTS leads (key TEXT PRIMARY KEY, ts INTEGER, "
               "company TEXT, role TEXT, location TEXT, deadline TEXT, stage TEXT, "
               "score INTEGER, reason TEXT, summary TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS extracts (uid INTEGER PRIMARY KEY, ts INTEGER, "
+              "kind TEXT, data TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS noise (sender TEXT PRIMARY KEY, count INTEGER, "
+              "last_ts INTEGER, unsub TEXT)")
     return c
 
 def meta_get(c, k, default=""):
@@ -162,6 +173,56 @@ def classify(sender, subject, body):
     imp = result.get("importance") if result.get("importance") in ("high", "normal", "low") else "normal"
     summary = str(result.get("summary") or subject)[:200]
     return cat, imp, summary
+
+def extract(c, uid, kind, sender, subject, body):
+    schema = EXTRACT_SCHEMAS.get(kind)
+    if not schema:
+        return None
+    r = llm("Extract structured details from this email. Reply ONLY with JSON: "
+            + schema + ". Use empty strings for anything not stated. Do not invent values."
+            + "\n\nFrom: " + sender + "\nSubject: " + subject + "\nBody: " + body[:1500])
+    if not isinstance(r, dict):
+        return None
+    r = {k: str(v)[:80] for k, v in r.items() if v}
+    if not r:
+        return None
+    c.execute("INSERT OR REPLACE INTO extracts (uid, ts, kind, data) VALUES (?,?,?,?)",
+              (uid, int(time.time()), kind, json.dumps(r)))
+    c.commit()
+    return r
+
+def note_noise(c, sender, msg):
+    unsub = msg.get("List-Unsubscribe") or ""
+    link = ""
+    for part in unsub.split(","):
+        part = part.strip().strip("<>")
+        if part.startswith("http"):
+            link = part[:300]
+            break
+        if part.startswith("mailto:") and not link:
+            link = part[:300]
+    addr = sender.split("<")[-1].rstrip(">").strip() or sender
+    c.execute("INSERT INTO noise (sender, count, last_ts, unsub) VALUES (?,1,?,?) "
+              "ON CONFLICT(sender) DO UPDATE SET count = noise.count + 1, "
+              "last_ts = excluded.last_ts, unsub = CASE WHEN excluded.unsub != '' "
+              "THEN excluded.unsub ELSE noise.unsub END",
+              (addr, int(time.time()), link))
+    c.commit()
+
+def logistics(c):
+    now = int(time.time())
+    rows = c.execute("SELECT kind, data, ts FROM extracts WHERE ts > ? ORDER BY ts DESC",
+                     (now - 45 * 86400,)).fetchall()
+    packages, travel, bills = [], [], []
+    for kind, data, ts in rows:
+        d = json.loads(data)
+        if kind == "orders" and d.get("tracking_number"):
+            packages.append(d)
+        elif kind == "travel" and (d.get("number") or d.get("date")):
+            travel.append(d)
+        elif kind == "finance" and d.get("due_date"):
+            bills.append(d)
+    return packages[:10], travel[:10], bills[:10]
 
 def safe_name(s):
     return "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in s).strip()[:80] or "unknown"
@@ -258,6 +319,8 @@ def poll(c):
             subject = decode(msg.get("Subject")) or "(no subject)"
             try:
                 cat, imp, summary = classify(sender, subject, body_text(msg))
+                if msg.get("List-Unsubscribe") and cat not in ("urgent", "finance", "travel", "orders", "job"):
+                    cat = "marketing" if cat == "other" else cat
             except Exception as e:
                 print("classify error:", e, flush=True)
                 cat, imp, summary = "other", "normal", subject
@@ -266,6 +329,24 @@ def poll(c):
                       (uid, int(time.time()), sender, subject, cat, imp, summary))
             c.commit()
             meta_set(c, "last_uid", uid)
+            body = body_text(msg)
+            if cat in NOISE:
+                note_noise(c, sender, msg)
+            elif cat in EXTRACT_SCHEMAS:
+                try:
+                    got = extract(c, uid, cat, sender, subject, body)
+                    if got and cat == "travel":
+                        say("✈️ Travel booked: " + " ".join(
+                            filter(None, [got.get("carrier"), got.get("number"),
+                                          got.get("date"), got.get("from", "") + "→" + got.get("to", "")])))
+                    elif got and cat == "orders" and got.get("tracking_number"):
+                        say("📦 " + got.get("merchant", "Package") + " shipped — "
+                            + got.get("carrier", "") + " " + got["tracking_number"]
+                            + (" · ETA " + got["eta"] if got.get("eta") else ""))
+                except Exception as e:
+                    print("extract error:", e, flush=True)
+            if cat in NOISE:
+                continue
             if imp == "high" or cat == "urgent":
                 say(ICONS.get(cat, "✉️") + " " + cat.upper() + " — " + summary
                     + "\n\nFrom: " + sender + "\nSubject: " + subject)
@@ -282,18 +363,50 @@ def digest(c):
     meta_set(c, "last_digest", today)
     rows = c.execute("SELECT category, summary FROM mail WHERE ts > ? ORDER BY category",
                      (int(time.time()) - 86400,)).fetchall()
-    if not rows:
+    packages, travel, bills = logistics(c)
+    if not rows and not packages and not travel:
         return
     by_cat = {}
+    noise_count = 0
     for cat, summary in rows:
-        by_cat.setdefault(cat, []).append(summary)
-    msg = "☕ Morning mail digest — " + str(len(rows)) + " email" + ("s" if len(rows) > 1 else "") + "\n"
+        if cat in NOISE:
+            noise_count += 1
+        else:
+            by_cat.setdefault(cat, []).append(summary)
+    msg = "☕ Morning digest — " + str(len(rows)) + " email" + ("s" if len(rows) != 1 else "") + "\n"
+    if travel:
+        msg += "\n✈️ UPCOMING TRAVEL\n"
+        for t in travel:
+            msg += ("• " + " ".join(filter(None, [t.get("carrier"), t.get("number")]))
+                    + " " + t.get("date", "") + " " + t.get("from", "")
+                    + ("→" + t["to"] if t.get("to") else "")
+                    + (" · ref " + t["reference"] if t.get("reference") else "") + "\n")
+    if packages:
+        msg += "\n📦 PACKAGES IN FLIGHT\n"
+        for p in packages:
+            msg += ("• " + p.get("merchant", "Order") + " — " + p.get("carrier", "")
+                    + " " + p.get("tracking_number", "")
+                    + (" · ETA " + p["eta"] if p.get("eta") else "") + "\n")
+    if bills:
+        msg += "\n💶 DUE SOON\n"
+        for b in bills:
+            msg += ("• " + b.get("payee", "?") + " " + b.get("amount", "")
+                    + " — " + b.get("due_date", "") + "\n")
     for cat in CATS:
         if cat not in by_cat:
             continue
-        msg += "\n" + ICONS[cat] + " " + cat.upper() + "\n"
+        msg += "\n" + ICONS.get(cat, "✉️") + " " + cat.upper() + "\n"
         for s in by_cat[cat]:
             msg += "• " + s + "\n"
+    if noise_count:
+        msg += "\n🔇 " + str(noise_count) + " marketing/newsletter email" + ("s" if noise_count != 1 else "") + " ignored\n"
+    if time.localtime().tm_wday == 0:
+        top_noise = c.execute("SELECT sender, count, unsub FROM noise WHERE last_ts > ? "
+                              "ORDER BY count DESC LIMIT 5", (int(time.time()) - 30 * 86400,)).fetchall()
+        if top_noise:
+            msg += "\n🧹 Weekly cleanup — noisiest senders (30d):\n"
+            for s, n, unsub in top_noise:
+                msg += "• " + s + " ×" + str(n) + ("\n  " + unsub if unsub else " (no unsubscribe link)") + "\n"
     say(msg[:4000])
 
 def write_stats(c):
@@ -314,12 +427,15 @@ def write_stats(c):
         if (imp == "high" or cat == "urgent") and now - ts < 7 * 86400:
             urgent7 += 1
     total = len(rows)
-    robots = cats.get("newsletter", 0) + cats.get("orders", 0)
+    robots = cats.get("newsletter", 0) + cats.get("marketing", 0)
     top = sorted(senders.items(), key=lambda kv: -kv[1])[:5]
     series = []
     for i in range(13, -1, -1):
         day = time.strftime("%Y-%m-%d", time.localtime(now - i * 86400))
         series.append({"day": day[5:], "count": days.get(day, 0)})
+    packages, travel, bills = logistics(c)
+    noisy = c.execute("SELECT sender, count, unsub FROM noise WHERE last_ts > ? "
+                      "ORDER BY count DESC LIMIT 5", (month,)).fetchall()
     stats = {
         "updated": time.strftime("%Y-%m-%dT%H:%M"),
         "total30d": total,
@@ -328,6 +444,10 @@ def write_stats(c):
         "categories": cats,
         "top_senders": [{"sender": s, "count": n} for s, n in top],
         "daily": series,
+        "packages": packages,
+        "travel": travel,
+        "bills": bills,
+        "noisiest": [{"sender": s, "count": n, "unsub": u} for s, n, u in noisy],
     }
     os.makedirs("/statsout", exist_ok=True)
     with open("/statsout/mailstats.json.tmp", "w") as f:
