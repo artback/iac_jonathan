@@ -44,6 +44,12 @@ variable "model" {
   default     = "llama3.2:3b"
 }
 
+variable "keep_alive" {
+  description = "How long Ollama keeps the model in RAM after a call. Short = ~2.5GB freed between bursts."
+  type        = string
+  default     = "30s"
+}
+
 variable "digest_hour" {
   description = "Local hour (0-23) for the daily digest."
   type        = number
