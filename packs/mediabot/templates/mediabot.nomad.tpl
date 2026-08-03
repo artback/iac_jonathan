@@ -113,8 +113,8 @@ def search(chat, which, term):
             caption += "\n\n✓ Already in the library"
             keyboard = None
         elif which == "m":
-            # note: nested lists are written [ [ … ] ] — a literal [[ would
-            # be parsed as a nomad-pack template delimiter
+            # note: nested lists are written [ [ … ] ] with a space, because
+            # adjacent double open-brackets are nomad-pack template delimiters
             keyboard = [ [{"text": "➕ Add to Radarr", "callback_data": "add:m:" + str(ext_id)}] ]
         else:
             keyboard = [ [{"text": "➕ All seasons", "callback_data": "adds:" + str(ext_id) + ":all"}],
