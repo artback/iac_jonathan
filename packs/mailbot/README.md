@@ -32,3 +32,25 @@ Deploy: `nomad-pack run packs/mailbot -f vars/mailbot.hcl`
 Categories/prompt live in the template. If classification quality disappoints,
 try a bigger model (`model` var) — the Pi has RAM headroom. Digest hour via
 `digest_hour` (default 08:00 local).
+
+## What it extracts
+
+Beyond category/importance/summary, tracked categories get a second LLM pass
+that pulls structured fields (stored in `extracts`, surfaced in the digest and
+`mailstats.json`):
+
+- **orders** → carrier, tracking number, ETA, merchant → "packages in flight"
+- **travel** → mode, carrier, number, date, route, booking ref → "upcoming travel"
+- **finance** → payee, amount, due date → "due soon"
+- **job** (when tracked) → company, role, stage, fit score → Obsidian notes + Top Jobs
+
+Travel bookings and shipped packages also ping immediately.
+
+## Noise handling
+
+`marketing` and `newsletter` never ping and are never itemized — the digest
+shows a single "🔇 N ignored" line. Any mail carrying a `List-Unsubscribe`
+header is treated as noise unless it classified as urgent/finance/travel/
+orders/job, and the header's unsubscribe URL is harvested per sender. **Monday
+digests append the 5 noisiest senders with their unsubscribe links** — a
+one-tap weekly cleanup list. The bot never unsubscribes on your behalf.
