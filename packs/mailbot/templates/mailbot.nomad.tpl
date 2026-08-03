@@ -136,28 +136,41 @@ def say_to(chat, text):
 def say(text):
     say_to(CHAT, text)
 
+def safe_decode(raw, charset):
+    """Bytes -> str, tolerating the charset labels mail servers invent
+    ('unknown-8bit', 'x-unknown', misspellings). Never raises."""
+    for enc in (charset, "utf-8", "latin-1"):
+        if not enc:
+            continue
+        try:
+            return raw.decode(enc, "replace")
+        except (LookupError, TypeError):
+            continue
+    return raw.decode("utf-8", "replace")
+
 def decode(value):
     if not value:
         return ""
-    parts = email.header.decode_header(value)
+    try:
+        parts = email.header.decode_header(value)
+    except Exception:
+        return str(value).strip()
     out = ""
     for txt, enc in parts:
-        out += txt.decode(enc or "utf-8", "replace") if isinstance(txt, bytes) else txt
+        out += safe_decode(txt, enc) if isinstance(txt, bytes) else txt
     return out.strip()
 
 def body_text(msg):
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                try:
-                    return part.get_payload(decode=True).decode(
-                        part.get_content_charset() or "utf-8", "replace")
-                except Exception:
-                    continue
-        return ""
     try:
-        return msg.get_payload(decode=True).decode(
-            msg.get_content_charset() or "utf-8", "replace")
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain":
+                    raw = part.get_payload(decode=True)
+                    if raw:
+                        return safe_decode(raw, part.get_content_charset())
+            return ""
+        raw = msg.get_payload(decode=True)
+        return safe_decode(raw, msg.get_content_charset()) if raw else ""
     except Exception:
         return ""
 
@@ -413,7 +426,7 @@ def backfill(c, days):
     alone (free); everything else is parked in `pending` for the LLM to drain
     at its own pace. Nothing here calls the model, so it finishes in minutes."""
     imap = imaplib.IMAP4_SSL(HOST)
-    scanned = bulk = parked = 0
+    scanned = bulk = parked = failed = 0
     try:
         imap.login(USER, PASSWORD)
         imap.select("INBOX", readonly=True)
@@ -424,38 +437,44 @@ def backfill(c, days):
         for uid in uids:
             if uid in known:
                 continue
-            _, fetched = imap.uid("fetch", str(uid), "(BODY.PEEK[])")
-            if not fetched or not fetched[0]:
-                continue
-            msg = email.message_from_bytes(fetched[0][1])
-            sender = decode(msg.get("From"))
-            subject = decode(msg.get("Subject")) or "(no subject)"
             try:
-                ts = int(time.mktime(email.utils.parsedate(msg.get("Date"))))
-            except Exception:
-                ts = int(time.time())
-            scanned += 1
-            skipped = prefilter(msg, sender, subject)
-            if skipped:
-                c.execute("INSERT OR IGNORE INTO mail (uid, ts, sender, subject, category, "
-                          "importance, summary) VALUES (?,?,?,?,?,?,?)",
-                          (uid, ts, sender, subject, skipped, "low", subject[:200]))
-                note_noise(c, sender, msg)
-                bulk += 1
-            else:
-                c.execute("INSERT OR IGNORE INTO pending (uid, ts, sender, subject, body) "
-                          "VALUES (?,?,?,?,?)",
-                          (uid, ts, sender, subject, body_text(msg)[:1500]))
-                parked += 1
-            if scanned % 100 == 0:
-                c.commit()
+                _, fetched = imap.uid("fetch", str(uid), "(BODY.PEEK[])")
+                if not fetched or not fetched[0]:
+                    continue
+                msg = email.message_from_bytes(fetched[0][1])
+                sender = decode(msg.get("From"))
+                subject = decode(msg.get("Subject")) or "(no subject)"
+                try:
+                    ts = int(time.mktime(email.utils.parsedate(msg.get("Date"))))
+                except Exception:
+                    ts = int(time.time())
+                scanned += 1
+                skipped = prefilter(msg, sender, subject)
+                if skipped:
+                    c.execute("INSERT OR IGNORE INTO mail (uid, ts, sender, subject, category, "
+                              "importance, summary) VALUES (?,?,?,?,?,?,?)",
+                              (uid, ts, sender, subject, skipped, "low", subject[:200]))
+                    note_noise(c, sender, msg)
+                    bulk += 1
+                else:
+                    c.execute("INSERT OR IGNORE INTO pending (uid, ts, sender, subject, body) "
+                              "VALUES (?,?,?,?,?)",
+                              (uid, ts, sender, subject, body_text(msg)[:1500]))
+                    parked += 1
+                if scanned % 100 == 0:
+                    c.commit()
+            except Exception as e:
+                # one malformed message must not abort a 1000-message sweep
+                failed += 1
+                print("backfill skip uid", uid, "-", e, flush=True)
+                continue
         c.commit()
     finally:
         try:
             imap.logout()
         except Exception:
             pass
-    return scanned, bulk, parked
+    return scanned, bulk, parked, failed
 
 def drain_pending(c, budget):
     """Phase 2: classify parked history a few at a time, oldest first."""
@@ -662,11 +681,12 @@ def command(c, text):
         parts = text.split()
         days = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 120
         say("⏳ Sweeping " + str(days) + " days of history (headers only, no model)…")
-        scanned, bulk, parked = backfill(c, days)
+        scanned, bulk, parked, failed = backfill(c, days)
         eta = parked * 27 // 60
         return ("📥 Swept " + str(scanned) + " emails\n"
                 "• " + str(bulk) + " classified free from headers (bulk mail)\n"
-                "• " + str(parked) + " queued for the model\n\n"
+                "• " + str(parked) + " queued for the model\n"
+                + ("• " + str(failed) + " unreadable, skipped\n" if failed else "") + "\n"
                 "Stats are usable now — try /stats. The queue drains in the "
                 "background, roughly " + str(eta) + " min, and I'll say when it's done.")
     if text.startswith("/pending"):
