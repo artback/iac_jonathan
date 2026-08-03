@@ -77,3 +77,16 @@ Two controls keep that sane:
 default keep-alive plus 2-minute polling would pin that permanently on a box
 running ~20 other services, so every call passes `keep_alive` (default `30s`,
 the `keep_alive` var) — measured to release the memory promptly between bursts.
+
+## Commands
+
+The bot long-polls its own token (no conflict with printbot/mediabot) and
+answers only the configured `chat_id` — anyone else gets "this mailbox bot is
+private".
+
+- `/today` — last 24h grouped by category, noise counted not listed
+- `/travel` — upcoming trips · `/packages` — parcels in transit · `/bills` — due soon
+- `/noise` — noisiest senders with unsubscribe links
+- `/search WORD` — find past mail by subject or summary
+- `/stats` — 30-day breakdown incl. how much CPU the header prefilter saved
+- `/digest` — send the morning digest right now

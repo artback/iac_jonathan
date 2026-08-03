@@ -65,7 +65,7 @@ job "mailbot" {
         destination = "local/bot.py"
         change_mode = "restart"
         data        = <<EOH
-import email, email.header, imaplib, json, os, sqlite3, time, urllib.request
+import email, email.header, imaplib, json, os, sqlite3, threading, time, urllib.request
 
 HOST = os.environ["IMAP_HOST"]
 USER = os.environ["IMAP_USER"]
@@ -121,15 +121,18 @@ def meta_set(c, k, v):
     c.execute("INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
     c.commit()
 
-def say(text):
+def say_to(chat, text):
     try:
         req = urllib.request.Request(
             "https://api.telegram.org/bot" + TOKEN + "/sendMessage",
-            data=json.dumps({"chat_id": CHAT, "text": text}).encode(),
+            data=json.dumps({"chat_id": chat, "text": text}).encode(),
             headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=30).read()
     except Exception as e:
         print("say error:", e, flush=True)
+
+def say(text):
+    say_to(CHAT, text)
 
 def decode(value):
     if not value:
@@ -403,10 +406,11 @@ def poll(c):
         except Exception:
             pass
 
-def digest(c):
+def digest(c, force=False):
     today = time.strftime("%Y-%m-%d")
-    if time.localtime().tm_hour != DIGEST_HOUR or meta_get(c, "last_digest") == today:
-        return
+    if not force:
+        if time.localtime().tm_hour != DIGEST_HOUR or meta_get(c, "last_digest") == today:
+            return
     meta_set(c, "last_digest", today)
     rows = c.execute("SELECT category, summary FROM mail WHERE ts > ? ORDER BY category",
                      (int(time.time()) - 86400,)).fetchall()
@@ -505,8 +509,129 @@ def write_stats(c):
         dst.write(src.read())
     os.unlink("/statsout/mailstats.json.tmp")
 
+def fmt_travel(t):
+    return ("• " + " ".join(filter(None, [t.get("carrier"), t.get("number")]))
+            + " " + t.get("date", "") + " " + t.get("from", "")
+            + ("→" + t["to"] if t.get("to") else "")
+            + (" · ref " + t["reference"] if t.get("reference") else ""))
+
+def fmt_package(p):
+    return ("• " + p.get("merchant", "Order") + " — " + p.get("carrier", "")
+            + " " + p.get("tracking_number", "")
+            + (" · ETA " + p["eta"] if p.get("eta") else ""))
+
+def command(c, text):
+    now = int(time.time())
+    packages, travel, bills = logistics(c)
+    if text.startswith("/travel"):
+        return "✈️ Upcoming travel:\n" + ("\n".join(fmt_travel(t) for t in travel)
+                                          if travel else "nothing booked")
+    if text.startswith("/packages"):
+        return "📦 Packages in flight:\n" + ("\n".join(fmt_package(p) for p in packages)
+                                             if packages else "nothing in transit")
+    if text.startswith("/bills") or text.startswith("/due"):
+        return "💶 Due soon:\n" + ("\n".join(
+            "• " + (b.get("payee") or "?") + " " + b.get("amount", "") + " — " + b.get("due_date", "")
+            for b in bills) if bills else "nothing pending")
+    if text.startswith("/today"):
+        rows = c.execute("SELECT category, summary FROM mail WHERE ts > ? ORDER BY category",
+                         (now - 86400,)).fetchall()
+        if not rows:
+            return "Nothing new in the last 24h."
+        noise = sum(1 for cat, _ in rows if cat in NOISE)
+        out = "📥 Last 24h — " + str(len(rows)) + " emails\n"
+        by = {}
+        for cat, s in rows:
+            if cat not in NOISE:
+                by.setdefault(cat, []).append(s)
+        for cat in CATS:
+            if cat in by:
+                out += "\n" + ICONS.get(cat, "✉️") + " " + cat.upper() + "\n"
+                out += "".join("• " + s + "\n" for s in by[cat])
+        if noise:
+            out += "\n🔇 " + str(noise) + " marketing/newsletter ignored"
+        return out
+    if text.startswith("/noise"):
+        rows = c.execute("SELECT sender, count, unsub FROM noise WHERE last_ts > ? "
+                         "ORDER BY count DESC LIMIT 10", (now - 30 * 86400,)).fetchall()
+        if not rows:
+            return "No bulk senders recorded yet."
+        return "🧹 Noisiest senders (30d):\n" + "\n".join(
+            "• " + s + " ×" + str(n) + ("\n  " + u if u else " (no unsubscribe link)")
+            for s, n, u in rows)
+    if text.startswith("/search"):
+        term = text.split(" ", 1)[1].strip() if " " in text else ""
+        if not term:
+            return "Usage: /search WORD — looks through subjects and summaries"
+        rows = c.execute("SELECT category, subject, summary FROM mail "
+                         "WHERE subject LIKE ? OR summary LIKE ? "
+                         "ORDER BY ts DESC LIMIT 10", ("%" + term + "%", "%" + term + "%")).fetchall()
+        if not rows:
+            return "Nothing found for '" + term + "'."
+        return "🔎 '" + term + "':\n" + "\n".join(
+            ICONS.get(cat, "✉️") + " " + (summary or subj) for cat, subj, summary in rows)
+    if text.startswith("/stats"):
+        total = c.execute("SELECT count(*) FROM mail WHERE ts > ?", (now - 30 * 86400,)).fetchone()[0]
+        cats = c.execute("SELECT category, count(*) FROM mail WHERE ts > ? GROUP BY category "
+                         "ORDER BY 2 DESC", (now - 30 * 86400,)).fetchall()
+        calls = int(meta_get(c, "llm_calls", "0"))
+        skipped = int(meta_get(c, "llm_skipped", "0"))
+        saved = int(100 * skipped / (calls + skipped)) if (calls + skipped) else 0
+        out = "📊 Last 30 days — " + str(total) + " emails\n"
+        out += "".join("• " + ICONS.get(k, "✉️") + " " + k + ": " + str(v) + "\n" for k, v in cats)
+        out += "\n🧠 " + str(calls) + " classified by the model, " + str(skipped) \
+               + " filtered by header (" + str(saved) + "% CPU saved)"
+        return out
+    if text.startswith("/digest"):
+        # inline: this connection belongs to the listener thread and sqlite
+        # connections cannot be used from another one
+        digest(c, force=True)
+        return None
+    return ("📬 Mail commands:\n"
+            "/today — last 24h by category\n"
+            "/travel — upcoming trips\n"
+            "/packages — parcels in transit\n"
+            "/bills — payments due\n"
+            "/noise — noisiest senders + unsubscribe links\n"
+            "/search WORD — find past mail\n"
+            "/stats — 30-day breakdown\n"
+            "/digest — send the digest now")
+
+def listen():
+    """Long-poll for commands. Own token, so no conflict with the other bots."""
+    c = db()
+    offset = 0
+    while True:
+        try:
+            req = urllib.request.Request(
+                "https://api.telegram.org/bot" + TOKEN + "/getUpdates",
+                data=json.dumps({"offset": offset, "timeout": 50}).encode(),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=70) as r:
+                updates = json.load(r)
+            for u in updates.get("result", []):
+                offset = u["update_id"] + 1
+                msg = u.get("message") or {}
+                chat = str((msg.get("chat") or {}).get("id", ""))
+                text = (msg.get("text") or "").strip()
+                if not text:
+                    continue
+                if chat != CHAT:
+                    say_to(chat, "This mailbox bot is private.")
+                    continue
+                try:
+                    reply = command(c, text)
+                    if reply:
+                        say(reply[:4000])
+                except Exception as e:
+                    say("Command failed: " + str(e))
+        except Exception as e:
+            print("listen error:", e, flush=True)
+            time.sleep(5)
+
 def main():
     c = db()
+    threading.Thread(target=listen, daemon=True).start()
     while True:
         try:
             poll(c)
