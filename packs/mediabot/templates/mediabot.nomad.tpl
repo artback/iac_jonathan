@@ -83,6 +83,12 @@ def arr_post(a, path, payload):
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.load(r)
 
+def photo_card(chat, photo, caption, keyboard):
+    p = {"chat_id": chat, "photo": photo, "caption": caption}
+    if keyboard:
+        p["reply_markup"] = {"inline_keyboard": keyboard}
+    tg("sendPhoto", p)
+
 def search(chat, which, term):
     a = ARR[which]
     if which == "m":
@@ -92,22 +98,36 @@ def search(chat, which, term):
     if not results:
         say(chat, "No " + a["kind"] + " found for '" + term + "'.")
         return
-    lines, buttons = [], []
-    for i, r in enumerate(results[:5]):
+    shown = 0
+    for r in results:
+        if shown >= 3:
+            break
+        shown += 1
         year = str(r.get("year", "?"))
         title = r.get("title", "?")
         already = r.get("id", 0) > 0 or r.get("path")
-        mark = " — already added ✓" if already else ""
-        lines.append(str(i + 1) + ". " + title + " (" + year + ")" + mark)
-        if not already:
-            ext_id = r.get("tmdbId") if which == "m" else r.get("tvdbId")
-            buttons.append([{"text": "➕ " + str(i + 1) + ". " + title[:40] + " (" + year + ")",
-                             "callback_data": "add:" + which + ":" + str(ext_id)}])
-    say(chat, a["icon"] + " Results for '" + term + "':\n\n" + "\n".join(lines)
-             + ("\n\nTap to add:" if buttons else "\n\nEverything is already in the library."),
-        buttons or None)
+        overview = (r.get("overview") or "")[:180]
+        caption = a["icon"] + " " + title + " (" + year + ")\n" + overview
+        ext_id = r.get("tmdbId") if which == "m" else r.get("tvdbId")
+        if already:
+            caption += "\n\n✓ Already in the library"
+            keyboard = None
+        elif which == "m":
+            keyboard = [[{"text": "➕ Add to Radarr", "callback_data": "add:m:" + str(ext_id)}]]
+        else:
+            keyboard = [[{"text": "➕ All seasons", "callback_data": "adds:" + str(ext_id) + ":all"}],
+                        [{"text": "➕ Latest season only", "callback_data": "adds:" + str(ext_id) + ":latestSeason"}],
+                        [{"text": "➕ Future episodes only", "callback_data": "adds:" + str(ext_id) + ":future"}]]
+        poster = r.get("remotePoster")
+        try:
+            if poster:
+                photo_card(chat, poster, caption, keyboard)
+            else:
+                raise ValueError("no poster")
+        except Exception:
+            say(chat, caption, keyboard)
 
-def add(chat, which, ext_id):
+def add(chat, which, ext_id, monitor=None, who=""):
     a = ARR[which]
     if which == "m":
         obj = arr_get(a, "/movie/lookup/tmdb?tmdbId=" + ext_id)
@@ -120,12 +140,17 @@ def add(chat, which, ext_id):
     if which == "m":
         obj["addOptions"] = {"searchForMovie": True}
         added = arr_post(a, "/movie", obj)
+        detail = ""
     else:
-        obj["addOptions"] = {"searchForMissingEpisodes": True}
+        obj["addOptions"] = {"monitor": monitor or "all", "searchForMissingEpisodes": True}
         added = arr_post(a, "/series", obj)
-    say(chat, a["icon"] + " Added: " + added.get("title", "?")
-             + " (" + str(added.get("year", "?")) + ") — searching for releases now. "
-             + "You'll get the usual download updates.")
+        detail = {"all": " (all seasons)", "latestSeason": " (latest season)",
+                  "future": " (future episodes)"}.get(monitor or "all", "")
+    title = added.get("title", "?") + " (" + str(added.get("year", "?")) + ")"
+    say(chat, a["icon"] + " Added: " + title + detail
+             + " — searching for releases now.")
+    for c in ALLOWED - {chat}:
+        say(c, a["icon"] + " " + (who or "Someone") + " added " + title + detail)
 
 def queue_report(chat):
     out = []
@@ -218,6 +243,19 @@ def handle_message(msg):
             search(chat, "s", text.split(" ", 1)[1].strip())
         elif text.startswith("/queue"):
             queue_report(chat)
+        elif text.startswith("/disk"):
+            out = []
+            for which in ("m", "s"):
+                a = ARR[which]
+                try:
+                    for d in arr_get(a, "/diskspace"):
+                        free = round(d.get("freeSpace", 0) / 1e9)
+                        total = round(d.get("totalSpace", 1) / 1e9)
+                        out.append(a["icon"] + " " + d.get("path", "?") + " — "
+                                   + str(free) + " / " + str(total) + " GB free")
+                except Exception as e:
+                    out.append(a["icon"] + " diskspace unavailable: " + str(e))
+            say(chat, "💾 Seedbox storage:\n" + "\n".join(dict.fromkeys(out)))
         elif text.startswith("/upcoming"):
             upcoming(chat)
         elif text.startswith("/"):
@@ -225,7 +263,8 @@ def handle_message(msg):
                      + "/movie TITLE — search & add to Radarr\n"
                      + "/series TITLE — search & add to Sonarr\n"
                      + "/queue — current downloads\n"
-                     + "/upcoming — next 7 days\n\n"
+                     + "/upcoming — next 7 days\n"
+                     + "/disk — seedbox storage\n\n"
                      + "Or just send a title — or paste an IMDb / TMDb / "
                      + "Trakt / Letterboxd link and I'll decode it.")
         elif resolve_link(chat, text):
@@ -246,12 +285,16 @@ def handle_callback(cb):
     if chat not in ALLOWED:
         return
     data = cb.get("data", "")
-    if data.startswith("add:"):
-        _, which, ext_id = data.split(":")
-        try:
-            add(chat, which, ext_id)
-        except Exception as e:
-            say(chat, "Add failed: " + str(e))
+    who = (cb.get("from") or {}).get("first_name", "")
+    try:
+        if data.startswith("add:"):
+            _, which, ext_id = data.split(":")
+            add(chat, which, ext_id, who=who)
+        elif data.startswith("adds:"):
+            _, ext_id, monitor = data.split(":")
+            add(chat, "s", ext_id, monitor=monitor, who=who)
+    except Exception as e:
+        say(chat, "Add failed: " + str(e))
 
 def main():
     offset = 0
