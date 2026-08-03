@@ -85,6 +85,7 @@ if not CATS:
 TRACKED = {t.strip() for t in os.environ.get("TRACKED", "").split(",") if t.strip()}
 PROFILE = os.environ.get("PROFILE", "")
 VAULT = "/vault/Mail Triage"
+MAX_LLM_PER_CYCLE = 10
 STAGES = ("outreach", "applied", "interview", "rejected", "offer", "update")
 ICONS = {"urgent": "🚨", "job": "💼", "finance": "💶", "personal": "💬",
          "orders": "📦", "travel": "✈️", "newsletter": "📰", "marketing": "🔇",
@@ -160,6 +161,30 @@ def llm(prompt):
         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=300) as r:
         return json.loads(json.load(r)["response"])
+
+TRANSACTIONAL = ("order", "commande", "shipping", "shipped", "shipment", "dispatch",
+                 "parcel", "package", "colis", "expédi", "tracking", "suivi",
+                 "delivery", "delivered", "livraison", "invoice", "facture",
+                 "receipt", "reçu", "payment", "paiement", "refund", "remboursement",
+                 "flight", "vol ", "booking", "réservation", "boarding", "check-in",
+                 "billet", "ticket", "itinerary", "reservation", "confirmation",
+                 "appointment", "rendez-vous", "due", "échéance", "statement")
+
+def prefilter(msg, sender, subject):
+    """Skip the LLM for obvious bulk mail. Returns a category or None.
+
+    Bulk senders set List-Unsubscribe; transactional mail sometimes does too,
+    so anything whose subject looks like an order/travel/payment still goes
+    to the model. This typically removes half the inbox from the LLM path."""
+    if not msg.get("List-Unsubscribe"):
+        return None
+    hay = (subject + " " + sender).lower()
+    if any(word in hay for word in TRANSACTIONAL):
+        return None
+    precedence = (msg.get("Precedence") or "").lower()
+    if precedence in ("bulk", "list") or msg.get("List-Id"):
+        return "newsletter"
+    return "marketing"
 
 def classify(sender, subject, body):
     cat_lines = "\n".join("- " + k + ": " + v for k, v in CATS.items())
@@ -305,10 +330,16 @@ def poll(c):
             say("📬 Mail triage is live — watching " + USER + " from now on.")
             return
         _, data = imap.uid("search", None, "UID " + str(int(last) + 1) + ":*")
+        llm_budget = MAX_LLM_PER_CYCLE
         for uid_b in data[0].split():
             uid = int(uid_b)
             if uid <= int(last):
                 continue
+            if llm_budget <= 0:
+                # burst guard: leave the rest for the next cycle so a flood
+                # can't monopolise the Pi's CPU (UID cursor stays put)
+                print("llm budget spent, resuming next cycle", flush=True)
+                break
             _, fetched = imap.uid("fetch", str(uid), "(BODY.PEEK[])")
             raw = fetched[0][1] if fetched and fetched[0] else None
             if not raw:
@@ -317,13 +348,18 @@ def poll(c):
             msg = email.message_from_bytes(raw)
             sender = decode(msg.get("From"))
             subject = decode(msg.get("Subject")) or "(no subject)"
-            try:
-                cat, imp, summary = classify(sender, subject, body_text(msg))
-                if msg.get("List-Unsubscribe") and cat not in ("urgent", "finance", "travel", "orders", "job"):
-                    cat = "marketing" if cat == "other" else cat
-            except Exception as e:
-                print("classify error:", e, flush=True)
-                cat, imp, summary = "other", "normal", subject
+            skipped = prefilter(msg, sender, subject)
+            if skipped:
+                cat, imp, summary = skipped, "low", subject[:200]
+                meta_set(c, "llm_skipped", int(meta_get(c, "llm_skipped", "0")) + 1)
+            else:
+                try:
+                    cat, imp, summary = classify(sender, subject, body_text(msg))
+                    llm_budget -= 1
+                    meta_set(c, "llm_calls", int(meta_get(c, "llm_calls", "0")) + 1)
+                except Exception as e:
+                    print("classify error:", e, flush=True)
+                    cat, imp, summary = "other", "normal", subject
             c.execute("INSERT OR IGNORE INTO mail (uid, ts, sender, subject, category, importance, summary) "
                       "VALUES (?, ?, ?, ?, ?, ?, ?)",
                       (uid, int(time.time()), sender, subject, cat, imp, summary))
@@ -448,6 +484,8 @@ def write_stats(c):
         "travel": travel,
         "bills": bills,
         "noisiest": [{"sender": s, "count": n, "unsub": u} for s, n, u in noisy],
+        "llm_calls": int(meta_get(c, "llm_calls", "0")),
+        "llm_skipped": int(meta_get(c, "llm_skipped", "0")),
     }
     os.makedirs("/statsout", exist_ok=True)
     with open("/statsout/mailstats.json.tmp", "w") as f:

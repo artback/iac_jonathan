@@ -54,3 +54,21 @@ header is treated as noise unless it classified as urgent/finance/travel/
 orders/job, and the header's unsubscribe URL is harvested per sender. **Monday
 digests append the 5 noisiest senders with their unsubscribe links** — a
 one-tap weekly cleanup list. The bot never unsubscribes on your behalf.
+
+## Cost & CPU
+
+Classification runs on the Pi's own Ollama — **no API, no per-email cost**. The
+real budget is CPU: ~27s per LLM call on a Pi 5 (llama3.2:3b).
+
+Two controls keep that sane:
+
+- **Header prefilter** — bulk mail (`List-Unsubscribe`, `List-Id`, `Precedence:
+  bulk`) skips the LLM entirely and is filed as marketing/newsletter, *unless*
+  the subject looks transactional (order/shipment/flight/invoice/… incl. FR
+  terms), which still goes to the model. Typically removes half the inbox from
+  the LLM path at zero cost.
+- **Burst cap** — `MAX_LLM_PER_CYCLE` (10) per 2-minute poll; a flood is spread
+  over cycles instead of pegging the CPU. The UID cursor only advances on
+  processed mail, so nothing is skipped.
+
+`mailstats.json` reports `llm_calls` vs `llm_skipped` so the saving is visible.
