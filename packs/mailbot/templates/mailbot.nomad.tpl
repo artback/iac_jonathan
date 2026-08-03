@@ -65,7 +65,7 @@ job "mailbot" {
         destination = "local/bot.py"
         change_mode = "restart"
         data        = <<EOH
-import email, email.header, imaplib, json, os, sqlite3, threading, time, urllib.request
+import email, email.header, email.utils, imaplib, json, os, sqlite3, threading, time, urllib.request
 
 HOST = os.environ["IMAP_HOST"]
 USER = os.environ["IMAP_USER"]
@@ -111,6 +111,8 @@ def db():
               "kind TEXT, data TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS noise (sender TEXT PRIMARY KEY, count INTEGER, "
               "last_ts INTEGER, unsub TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS pending (uid INTEGER PRIMARY KEY, ts INTEGER, "
+              "sender TEXT, subject TEXT, body TEXT)")
     return c
 
 def meta_get(c, k, default=""):
@@ -406,6 +408,80 @@ def poll(c):
         except Exception:
             pass
 
+def backfill(c, days):
+    """Phase 1: sweep history cheaply. Bulk mail is classified from headers
+    alone (free); everything else is parked in `pending` for the LLM to drain
+    at its own pace. Nothing here calls the model, so it finishes in minutes."""
+    imap = imaplib.IMAP4_SSL(HOST)
+    scanned = bulk = parked = 0
+    try:
+        imap.login(USER, PASSWORD)
+        imap.select("INBOX", readonly=True)
+        since = time.strftime("%d-%b-%Y", time.localtime(time.time() - days * 86400))
+        uids = uid_search(imap, "(SINCE " + since + ")")
+        known = {r[0] for r in c.execute("SELECT uid FROM mail").fetchall()}
+        known |= {r[0] for r in c.execute("SELECT uid FROM pending").fetchall()}
+        for uid in uids:
+            if uid in known:
+                continue
+            _, fetched = imap.uid("fetch", str(uid), "(BODY.PEEK[])")
+            if not fetched or not fetched[0]:
+                continue
+            msg = email.message_from_bytes(fetched[0][1])
+            sender = decode(msg.get("From"))
+            subject = decode(msg.get("Subject")) or "(no subject)"
+            try:
+                ts = int(time.mktime(email.utils.parsedate(msg.get("Date"))))
+            except Exception:
+                ts = int(time.time())
+            scanned += 1
+            skipped = prefilter(msg, sender, subject)
+            if skipped:
+                c.execute("INSERT OR IGNORE INTO mail (uid, ts, sender, subject, category, "
+                          "importance, summary) VALUES (?,?,?,?,?,?,?)",
+                          (uid, ts, sender, subject, skipped, "low", subject[:200]))
+                note_noise(c, sender, msg)
+                bulk += 1
+            else:
+                c.execute("INSERT OR IGNORE INTO pending (uid, ts, sender, subject, body) "
+                          "VALUES (?,?,?,?,?)",
+                          (uid, ts, sender, subject, body_text(msg)[:1500]))
+                parked += 1
+            if scanned % 100 == 0:
+                c.commit()
+        c.commit()
+    finally:
+        try:
+            imap.logout()
+        except Exception:
+            pass
+    return scanned, bulk, parked
+
+def drain_pending(c, budget):
+    """Phase 2: classify parked history a few at a time, oldest first."""
+    rows = c.execute("SELECT uid, ts, sender, subject, body FROM pending "
+                     "ORDER BY ts LIMIT ?", (budget,)).fetchall()
+    for uid, ts, sender, subject, body in rows:
+        try:
+            cat, imp, summary = classify(sender, subject, body)
+            meta_set(c, "llm_calls", int(meta_get(c, "llm_calls", "0")) + 1)
+        except Exception as e:
+            print("backfill classify error:", e, flush=True)
+            return
+        c.execute("INSERT OR IGNORE INTO mail (uid, ts, sender, subject, category, "
+                  "importance, summary) VALUES (?,?,?,?,?,?,?)",
+                  (uid, ts, sender, subject, cat, imp, summary))
+        if cat in EXTRACT_SCHEMAS:
+            try:
+                extract(c, uid, cat, sender, subject, body)
+            except Exception:
+                pass
+        c.execute("DELETE FROM pending WHERE uid = ?", (uid,))
+        c.commit()
+    left = c.execute("SELECT count(*) FROM pending").fetchone()[0]
+    if rows and left == 0:
+        say("✅ Backfill complete — history fully classified. Try /stats")
+
 def digest(c, force=False):
     today = time.strftime("%Y-%m-%d")
     if not force:
@@ -582,6 +658,20 @@ def command(c, text):
         out += "\n🧠 " + str(calls) + " classified by the model, " + str(skipped) \
                + " filtered by header (" + str(saved) + "% CPU saved)"
         return out
+    if text.startswith("/backfill"):
+        parts = text.split()
+        days = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 120
+        say("⏳ Sweeping " + str(days) + " days of history (headers only, no model)…")
+        scanned, bulk, parked = backfill(c, days)
+        eta = parked * 27 // 60
+        return ("📥 Swept " + str(scanned) + " emails\n"
+                "• " + str(bulk) + " classified free from headers (bulk mail)\n"
+                "• " + str(parked) + " queued for the model\n\n"
+                "Stats are usable now — try /stats. The queue drains in the "
+                "background, roughly " + str(eta) + " min, and I'll say when it's done.")
+    if text.startswith("/pending"):
+        n = c.execute("SELECT count(*) FROM pending").fetchone()[0]
+        return str(n) + " emails still queued for classification" if n else "Queue empty ✓"
     if text.startswith("/digest"):
         # inline: this connection belongs to the listener thread and sqlite
         # connections cannot be used from another one
@@ -595,7 +685,9 @@ def command(c, text):
             "/noise — noisiest senders + unsubscribe links\n"
             "/search WORD — find past mail\n"
             "/stats — 30-day breakdown\n"
-            "/digest — send the digest now")
+            "/digest — send the digest now\n"
+            "/backfill [days] — sweep history (default 120)\n"
+            "/pending — how much history is left to classify")
 
 def listen():
     """Long-poll for commands. Own token, so no conflict with the other bots."""
@@ -637,6 +729,11 @@ def main():
             poll(c)
         except Exception as e:
             print("poll error:", e, flush=True)
+        try:
+            # new mail always wins; leftovers of the cycle's budget go to history
+            drain_pending(c, MAX_LLM_PER_CYCLE)
+        except Exception as e:
+            print("drain error:", e, flush=True)
         try:
             digest(c)
         except Exception as e:
