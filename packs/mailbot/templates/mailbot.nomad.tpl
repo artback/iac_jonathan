@@ -53,6 +53,7 @@ job "mailbot" {
           KEEP_ALIVE="[[ var "keep_alive" . ]]"
           DIGEST_HOUR="[[ var "digest_hour" . ]]"
           NOTIFY_CATEGORIES="[[ var "notify_categories" . ]]"
+          SILENT="[[ var "silent" . ]]"
           CATEGORIES="[[ range $k, $v := (var "categories" .) ]][[ $k ]]=[[ $v ]]|[[ end ]]"
           TRACKED="[[ range $t := (var "tracked" .) ]][[ $t ]],[[ end ]]"
           PROFILE="[[ var "profile" . ]]"
@@ -96,6 +97,7 @@ ICONS = {"urgent": "🚨", "job": "💼", "finance": "💶", "personal": "💬",
          "other": "✉️"}
 NOISE = {"newsletter", "marketing"}
 NOTIFY_CATEGORIES = {x.strip() for x in os.environ.get("NOTIFY_CATEGORIES", "urgent").split(",") if x.strip()}
+SILENT = os.environ.get("SILENT", "true").lower() != "false"
 DATE_RULE = (" All dates MUST be ISO format YYYY-MM-DD (today is {today}; if the "
              "email omits the year, infer the nearest sensible one). Omit any "
              "field you cannot determine — never write the words empty, none, "
@@ -151,18 +153,24 @@ def meta_set(c, k, v):
     c.execute("INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
     c.commit()
 
-def say_to(chat, text):
+def say_to(chat, text, silent=SILENT):
+    """Messages arrive, phones stay quiet.
+
+    disable_notification delivers to the chat with no sound or vibration —
+    the message is there when you look, and never interrupts. This is the
+    whole point: email is a pull medium and so is this bot."""
     try:
         req = urllib.request.Request(
             "https://api.telegram.org/bot" + TOKEN + "/sendMessage",
-            data=json.dumps({"chat_id": chat, "text": text}).encode(),
+            data=json.dumps({"chat_id": chat, "text": text,
+                             "disable_notification": bool(silent)}).encode(),
             headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=30).read()
     except Exception as e:
         print("say error:", e, flush=True)
 
-def say(text):
-    say_to(CHAT, text)
+def say(text, silent=SILENT):
+    say_to(CHAT, text, silent)
 
 def safe_decode(raw, charset):
     """Bytes -> str, tolerating the charset labels mail servers invent

@@ -56,6 +56,12 @@ variable "notify_categories" {
   default     = "urgent"
 }
 
+variable "silent" {
+  description = "Deliver messages with no sound or vibration (Telegram disable_notification). They still appear in the chat."
+  type        = string
+  default     = "true"
+}
+
 variable "digest_hour" {
   description = "Local hour (0-23) for the daily digest."
   type        = number
