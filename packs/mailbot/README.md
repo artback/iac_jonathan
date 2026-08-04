@@ -78,6 +78,33 @@ default keep-alive plus 2-minute polling would pin that permanently on a box
 running ~20 other services, so every call passes `keep_alive` (default `30s`,
 the `keep_alive` var) — measured to release the memory promptly between bursts.
 
+## Passive by default
+
+`notify_categories` is empty in this deployment: **the bot never pushes**.
+Everything waits for the 08:00 digest, which is written as a verdict rather
+than an inbox reprint —
+
+```
+☕ Tuesday — 2 things need you
+
+1. Sign and return the lease before Monday
+   — SCI Ciccaret
+2. Renew passport application by 20 Aug
+   — Service-Public
+
+Coming up
+✈️ Thu 7 Aug — Ryanair FR1234 MRS→STN
+📦 DHL parcel — arrives Wed
+
+4 others noted, nothing to do  (1 finance · 1 marketing · 1 personal · 1 newsletter)
+```
+
+"needs you" comes from the classifier's `action_required` judgement: something
+the recipient must personally do. Receipts, confirmations, codes and notices
+about completed actions are information, and are only ever counted. Set
+`notify_categories = "urgent"` to re-enable interrupts for genuinely
+actionable urgent mail.
+
 ## Commands
 
 The bot long-polls its own token (no conflict with printbot/mediabot) and
