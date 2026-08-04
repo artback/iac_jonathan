@@ -672,6 +672,11 @@ def drain_pending(c, budget):
     if left == 0:
         say("✅ Backfill complete — history fully classified. Try /stats")
 
+def soon(item, days=3):
+    """Only surface dated things once they're actually near."""
+    when = parse_date(item.get("date") or item.get("due_date"))
+    return bool(when) and when <= time.time() + days * 86400
+
 def digest(c, force=False):
     today = time.strftime("%Y-%m-%d")
     if not force:
@@ -681,7 +686,14 @@ def digest(c, force=False):
     rows = c.execute("SELECT category, summary, action, sender FROM mail WHERE ts > ? "
                      "ORDER BY category", (int(time.time()) - 86400,)).fetchall()
     packages, travel, bills = logistics(c)
-    if not rows and not packages and not travel and not bills:
+    has_todo = any(act and cat not in NOISE for cat, _s, act, _snd in rows)
+    imminent = [x for x in (travel + bills) if soon(x)]
+    # Silence is the default state. A daily "nothing needs you" is still a
+    # daily interruption — if there's no task and nothing imminent, say
+    # nothing at all. /today and the dashboard are there when you want them.
+    if not force and not has_todo and not imminent and not packages:
+        meta_set(c, "last_digest", today)
+        print("digest: nothing worth saying, staying quiet", flush=True)
         return
     # A digest should be a verdict, not an inbox reprint: what needs you, what
     # is coming, and a single number for everything already dealt with.
@@ -690,7 +702,8 @@ def digest(c, force=False):
     handled = len(rows) - len(todo)
     day = time.strftime("%A")
     if todo:
-        msg = "☕ " + day + " — " + str(len(todo)) + " thing" + ("s" if len(todo) != 1 else "") + " need you\n\n"
+        msg = ("☕ " + day + " — " + str(len(todo))
+               + (" thing needs you\n\n" if len(todo) == 1 else " things need you\n\n"))
         for i, (s, sender) in enumerate(todo, 1):
             who = sender.split("<")[0].strip().strip('"') or sender
             msg += str(i) + ". " + s + "\n   — " + who[:40] + "\n"
@@ -698,11 +711,13 @@ def digest(c, force=False):
         msg = "☕ " + day + " — nothing needs you\n"
     ahead = []
     for t in travel:
-        ahead.append(fmt_travel(t))
+        if soon(t, 7):
+            ahead.append(fmt_travel(t))
     for p in packages:
         ahead.append(fmt_package(p))
     for b in bills:
-        ahead.append(fmt_bill(b))
+        if soon(b, 7):
+            ahead.append(fmt_bill(b))
     if ahead:
         msg += "\nComing up\n" + "\n".join(ahead) + "\n"
     if handled:
