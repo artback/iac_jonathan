@@ -94,11 +94,32 @@ ICONS = {"urgent": "🚨", "job": "💼", "finance": "💶", "personal": "💬",
          "orders": "📦", "travel": "✈️", "newsletter": "📰", "marketing": "🔇",
          "other": "✉️"}
 NOISE = {"newsletter", "marketing"}
+DATE_RULE = (" All dates MUST be ISO format YYYY-MM-DD (today is {today}; if the "
+             "email omits the year, infer the nearest sensible one). Omit any "
+             "field you cannot determine — never write the words empty, none, "
+             "unknown or n/a.")
 EXTRACT_SCHEMAS = {
-    "orders": '{"carrier": string, "tracking_number": string or empty, "eta": string or empty, "merchant": string}',
-    "travel": '{"mode": one of [flight,train,bus,ferry], "carrier": string, "number": string, "date": string, "from": string, "to": string, "reference": string or empty}',
-    "finance": '{"payee": string, "amount": string or empty, "due_date": string or empty}',
+    "orders": '{"merchant": string, "carrier": string, "tracking_number": string, "eta": ISO date}',
+    "travel": '{"mode": one of [flight,train,bus,ferry], "carrier": string, "number": string, "date": ISO date, "from": string, "to": string, "reference": string}',
+    "finance": '{"payee": string, "amount": string, "due_date": ISO date}',
 }
+JUNK_VALUES = {"", "empty", "none", "null", "n/a", "na", "unknown", "-", "?",
+               "string", "iso date", "not stated", "not specified"}
+
+def clean(value):
+    """Models like to write the literal word 'empty' into optional fields."""
+    v = str(value or "").strip()
+    return "" if v.lower() in JUNK_VALUES else v[:80]
+
+def parse_date(s):
+    """ISO first, then a few shapes that slip through. None if unparseable."""
+    s = (s or "").strip()[:10]
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+        try:
+            return time.mktime(time.strptime(s, fmt))
+        except (ValueError, OverflowError):
+            continue
+    return None
 
 def db():
     c = sqlite3.connect(DB)
@@ -229,12 +250,16 @@ def extract(c, uid, kind, sender, subject, body):
     if not schema:
         return None
     r = llm("Extract structured details from this email. Reply ONLY with JSON: "
-            + schema + ". Use empty strings for anything not stated. Do not invent values."
+            + schema + ". Do not invent values."
+            + DATE_RULE.format(today=time.strftime("%Y-%m-%d"))
             + "\n\nFrom: " + sender + "\nSubject: " + subject + "\nBody: " + body[:1500])
     if not isinstance(r, dict):
         return None
-    r = {k: str(v)[:80] for k, v in r.items() if v}
-    if not r:
+    r = {k: clean(v) for k, v in r.items()}
+    r = {k: v for k, v in r.items() if v}
+    # a record without its defining field is noise, not data
+    needs = {"orders": "tracking_number", "travel": "date", "finance": "due_date"}
+    if needs.get(kind) and not r.get(needs[kind]):
         return None
     c.execute("INSERT OR REPLACE INTO extracts (uid, ts, kind, data) VALUES (?,?,?,?)",
               (uid, int(time.time()), kind, json.dumps(r)))
@@ -260,19 +285,43 @@ def note_noise(c, sender, msg):
     c.commit()
 
 def logistics(c):
-    now = int(time.time())
-    rows = c.execute("SELECT kind, data, ts FROM extracts WHERE ts > ? ORDER BY ts DESC",
-                     (now - 45 * 86400,)).fetchall()
+    """Only things still ahead of us.
+
+    Filtering on the *email's* date was the original bug: backfilled mail from
+    June announced June trips as 'upcoming'. What matters is the event date."""
+    now = time.time()
+    today = now - 86400  # keep today's events until tomorrow
+    rows = c.execute("SELECT kind, data, ts FROM extracts ORDER BY ts DESC").fetchall()
     packages, travel, bills = [], [], []
     for kind, data, ts in rows:
         d = json.loads(data)
-        if kind == "orders" and d.get("tracking_number"):
-            packages.append(d)
-        elif kind == "travel" and (d.get("number") or d.get("date")):
-            travel.append(d)
-        elif kind == "finance" and d.get("due_date"):
-            bills.append(d)
-    return packages[:10], travel[:10], bills[:10]
+        if kind == "travel":
+            when = parse_date(d.get("date"))
+            if when and when >= today:
+                travel.append((when, d))
+        elif kind == "finance":
+            when = parse_date(d.get("due_date"))
+            if when and when >= today:
+                bills.append((when, d))
+        elif kind == "orders" and d.get("tracking_number"):
+            eta = parse_date(d.get("eta"))
+            # no ETA? treat as in flight only while the mail is recent
+            if (eta and eta >= today) or (not eta and ts > now - 14 * 86400):
+                packages.append((eta or ts, d))
+    def dedupe(pairs, keys):
+        # the same booking often arrives several times (confirm, reminder, change)
+        seen, out = set(), []
+        for when, d in sorted(pairs, key=lambda x: x[0]):
+            sig = tuple(d.get(k, "").lower() for k in keys)
+            if sig in seen:
+                continue
+            seen.add(sig)
+            out.append(d)
+        return out[:10]
+
+    return (dedupe(packages, ("tracking_number",)),
+            dedupe(travel, ("carrier", "number", "date")),
+            dedupe(bills, ("payee", "amount", "due_date")))
 
 def safe_name(s):
     return "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in s).strip()[:80] or "unknown"
@@ -561,21 +610,15 @@ def digest(c, force=False):
     if travel:
         msg += "\n✈️ UPCOMING TRAVEL\n"
         for t in travel:
-            msg += ("• " + " ".join(filter(None, [t.get("carrier"), t.get("number")]))
-                    + " " + t.get("date", "") + " " + t.get("from", "")
-                    + ("→" + t["to"] if t.get("to") else "")
-                    + (" · ref " + t["reference"] if t.get("reference") else "") + "\n")
+            msg += fmt_travel(t) + "\n"
     if packages:
         msg += "\n📦 PACKAGES IN FLIGHT\n"
         for p in packages:
-            msg += ("• " + p.get("merchant", "Order") + " — " + p.get("carrier", "")
-                    + " " + p.get("tracking_number", "")
-                    + (" · ETA " + p["eta"] if p.get("eta") else "") + "\n")
+            msg += fmt_package(p) + "\n"
     if bills:
         msg += "\n💶 DUE SOON\n"
         for b in bills:
-            msg += ("• " + b.get("payee", "?") + " " + b.get("amount", "")
-                    + " — " + b.get("due_date", "") + "\n")
+            msg += fmt_bill(b) + "\n"
     for cat in CATS:
         if cat not in by_cat:
             continue
@@ -643,15 +686,23 @@ def write_stats(c):
     os.unlink("/statsout/mailstats.json.tmp")
 
 def fmt_travel(t):
-    return ("• " + " ".join(filter(None, [t.get("carrier"), t.get("number")]))
-            + " " + t.get("date", "") + " " + t.get("from", "")
-            + ("→" + t["to"] if t.get("to") else "")
+    who = " ".join(filter(None, [t.get("carrier"), t.get("number")])) or t.get("mode", "Trip")
+    route = ""
+    if t.get("from") and t.get("to") and t["from"] != t["to"]:
+        route = " " + t["from"] + "→" + t["to"]
+    elif t.get("from"):
+        route = " from " + t["from"]
+    return ("• " + t.get("date", "") + "  " + who + route
             + (" · ref " + t["reference"] if t.get("reference") else ""))
 
 def fmt_package(p):
-    return ("• " + p.get("merchant", "Order") + " — " + p.get("carrier", "")
-            + " " + p.get("tracking_number", "")
+    return ("• " + (p.get("merchant") or "Order")
+            + " — " + " ".join(filter(None, [p.get("carrier"), p.get("tracking_number")]))
             + (" · ETA " + p["eta"] if p.get("eta") else ""))
+
+def fmt_bill(b):
+    return ("• " + b.get("due_date", "") + "  " + (b.get("payee") or "?")
+            + (" " + b["amount"] if b.get("amount") else ""))
 
 def command(c, text):
     now = int(time.time())
@@ -663,9 +714,8 @@ def command(c, text):
         return "📦 Packages in flight:\n" + ("\n".join(fmt_package(p) for p in packages)
                                              if packages else "nothing in transit")
     if text.startswith("/bills") or text.startswith("/due"):
-        return "💶 Due soon:\n" + ("\n".join(
-            "• " + (b.get("payee") or "?") + " " + b.get("amount", "") + " — " + b.get("due_date", "")
-            for b in bills) if bills else "nothing pending")
+        return "💶 Due soon:\n" + ("\n".join(fmt_bill(b) for b in bills)
+                                    if bills else "nothing pending")
     if text.startswith("/today"):
         rows = c.execute("SELECT category, summary FROM mail WHERE ts > ? ORDER BY category",
                          (now - 86400,)).fetchall()
