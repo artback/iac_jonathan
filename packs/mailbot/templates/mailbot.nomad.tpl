@@ -321,10 +321,20 @@ def should_notify(cat, imp, action, subject, summary):
         return False
     return action and imp == "high"
 
+# A receipt is the past tense of a bill. The model confirms both when asked
+# "is this a payment?", so the distinction is enforced here instead.
+ALREADY_PAID = re.compile(
+    r"paiement carte|virement (externe|effectué|envoyé)|prélèvement"
+    r"|payment (confirmation|receipt|received|sent|processed|successful)"
+    r"|you (sent|paid)|thanks? for your (payment|order)|merci pour votre paiement"
+    r"|receipt (from|for)|reçu de paiement|confirmation de (paiement|commande)"
+    r"|has been (charged|debited|paid)|votre commande|your order",
+    re.I)
+
 KIND_TEST = {
     "orders": "a courier delivering physical goods to the recipient — a real parcel with a carrier tracking number. A travel ticket or booking reference is NOT a shipment",
     "travel": "a ticket or confirmed booking for a journey the recipient takes (train, flight, bus, ferry, hotel)",
-    "finance": "a bill, invoice or payment request with a real amount owed",
+    "finance": "a bill or invoice the recipient STILL OWES, with a future due date. A receipt, a payment confirmation, or notice of money already taken is NOT a bill",
 }
 
 def grounded(quote, body, subject):
@@ -346,6 +356,9 @@ def grounded(quote, body, subject):
 def extract(c, uid, kind, sender, subject, body):
     schema = EXTRACT_SCHEMAS.get(kind)
     if not schema:
+        return None
+    if kind == "finance" and ALREADY_PAID.search(subject):
+        print("skip finance extract (receipt, not a bill):", subject[:60], flush=True)
         return None
     fields = schema.rstrip().rstrip("}")
     prompt = ("Extract structured details from this email. Reply ONLY with JSON: "
