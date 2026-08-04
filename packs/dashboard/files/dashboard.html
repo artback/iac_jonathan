@@ -126,15 +126,113 @@
         main {
             max-width: 1240px;
             margin: 0 auto;
-            padding: 20px 32px 64px;
+            padding: 18px 32px 64px;
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+        }
+
+        /* Apps: a launcher rail, not the main event. Icons only until you
+           hover or search — the widgets below are what you actually read. */
+        .app-rail {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .app {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 0;
+            padding: 7px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            text-decoration: none;
+            color: var(--text);
+            transition: background .15s, border-color .15s, gap .15s, padding .15s;
+        }
+
+        .app img, .app .icon-fallback { width: 20px; height: 20px; flex-shrink: 0; }
+
+        .app .icon-fallback {
+            border-radius: 5px; background: var(--accent-dim); color: var(--accent);
+            display: flex; align-items: center; justify-content: center;
+            font-size: .62rem; font-weight: 600;
+        }
+
+        .app .name {
+            max-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            font-size: .85rem;
+            opacity: 0;
+            transition: max-width .18s, opacity .18s;
+        }
+
+        .app:hover, .app:focus-visible {
+            background: var(--surface-hover);
+            border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+            gap: 8px;
+            padding-right: 12px;
+        }
+
+        .app:hover .name, .app:focus-visible .name,
+        .app-rail.expanded .app .name { max-width: 160px; opacity: 1; }
+
+        .app-rail.expanded .app { gap: 8px; padding-right: 12px; }
+
+        .app:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-dim); }
+        .app.hidden { display: none; }
+
+        .app .dot {
+            position: absolute; top: -2px; right: -2px;
+            width: 7px; height: 7px; border-radius: 50%;
+            border: 1.5px solid var(--bg); background: var(--border);
+        }
+
+        .app .dot[data-state="up"] { background: #4ADE80; }
+        .app .dot[data-state="down"] { background: #F87171; box-shadow: 0 0 6px rgba(248,113,113,.6); }
+
+        .rail-empty { font-size: .8rem; color: var(--muted); padding: 6px 2px; }
+
+        /* Widgets own the page */
+        .widgets {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 320px;
-            gap: 40px;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 18px;
             align-items: start;
         }
 
+        .widget {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: var(--surface);
+            padding: 16px 18px;
+            min-width: 0;
+        }
+
+        .widget.wide { grid-column: 1 / -1; }
+
+        .widget h2 {
+            font-size: .7rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: .12em;
+            color: var(--muted);
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+
+        .widget h2 a { color: var(--accent); text-decoration: none; font-size: .72rem; text-transform: none; letter-spacing: 0; }
+        .widget h2 a:hover { text-decoration: underline; }
+
         .stats-strip {
-            grid-column: 1 / -1;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
@@ -178,28 +276,6 @@
         .dot[data-state="up"] { background: #4ADE80; }
         .dot[data-state="down"] { background: #F87171; box-shadow: 0 0 6px rgba(248,113,113,0.6); }
 
-        .card { position: relative; }
-
-        .card .pin {
-            position: absolute;
-            top: -7px;
-            right: -7px;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            border: 1px solid var(--border);
-            background: var(--bg);
-            color: var(--muted);
-            font-size: 0.65rem;
-            line-height: 1;
-            cursor: pointer;
-            opacity: 0;
-            transition: opacity 0.15s, color 0.15s;
-        }
-
-        .card:hover .pin, .card .pin:focus-visible { opacity: 1; }
-        .card .pin.pinned { opacity: 1; color: #E8B45A; border-color: color-mix(in srgb, #E8B45A 40%, var(--border)); }
-
         .spark {
             align-self: center;
             margin-left: 2px;
@@ -235,141 +311,8 @@
         .news-item .mark:hover { color: #4ADE80; border-color: color-mix(in srgb, #4ADE80 40%, var(--border)); }
         .news-item.read { opacity: 0.35; transition: opacity 0.3s; }
 
-        .category { margin-bottom: 28px; }
-
-        .category-head {
-            display: flex;
-            align-items: baseline;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .category-head h2 {
-            font-size: 0.72rem;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-            color: var(--muted);
-        }
-
-        .category-head .count {
-            font-family: var(--mono);
-            font-size: 0.65rem;
-            color: var(--muted);
-            opacity: 0.7;
-        }
-
-        .service-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 8px;
-        }
-
-        .card {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 11px 14px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            text-decoration: none;
-            color: var(--text);
-            transition: border-color 0.15s, background 0.15s, transform 0.15s;
-        }
-
-        .card:hover, .card:focus-visible {
-            background: var(--surface-hover);
-            border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-        }
-
-        .card:focus-visible {
-            outline: none;
-            box-shadow: 0 0 0 3px var(--accent-dim);
-        }
-
-        .card img, .card .icon-fallback {
-            width: 22px;
-            height: 22px;
-            flex-shrink: 0;
-        }
-
-        .card .icon-fallback {
-            border-radius: 6px;
-            background: var(--accent-dim);
-            color: var(--accent);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.7rem;
-            font-weight: 600;
-        }
-
-        .card .name {
-            font-size: 0.92rem;
-            font-weight: 500;
-            flex: 1;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .card .port {
-            font-family: var(--mono);
-            font-variant-numeric: tabular-nums;
-            font-size: 0.68rem;
-            color: var(--muted);
-        }
-
-        .card .ext {
-            color: var(--muted);
-            font-size: 0.75rem;
-        }
-
-        .card.hidden { display: none; }
-
-        .empty-state {
-            color: var(--muted);
-            font-size: 0.9rem;
-            padding: 24px 4px;
-        }
-
-        .empty-state a { color: var(--accent); text-decoration: none; }
-        .empty-state a:hover { text-decoration: underline; }
-
-        aside { min-width: 0; }
-
-        .rail-head {
-            display: flex;
-            align-items: baseline;
-            justify-content: space-between;
-            margin-bottom: 10px;
-        }
-
-        .rail-head h2 {
-            font-size: 0.72rem;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-            color: var(--muted);
-        }
-
-        .rail-head a {
-            font-size: 0.75rem;
-            color: var(--accent);
-            text-decoration: none;
-        }
-
-        .rail-head a:hover { text-decoration: underline; }
-
-        .news-list {
-            display: flex;
-            flex-direction: column;
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            background: var(--surface);
-            overflow: hidden;
-        }
+        .news-list { display: flex; flex-direction: column; }
+        .news-list .news-item:first-child { padding-top: 0; }
 
         .news-item {
             display: block;
@@ -412,17 +355,7 @@
             color: var(--muted);
         }
 
-        .mail-section { margin-top: 28px; }
-
-        .mail-card {
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            background: var(--surface);
-            padding: 14px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
+        .mail-card { display: flex; flex-direction: column; gap: 12px; }
 
         .mail-headline {
             display: flex;
@@ -502,32 +435,30 @@
                     <circle cx="11" cy="11" r="8"></circle>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                 </svg>
-                <input type="text" name="q" id="q" placeholder="Filter services — Enter searches the web" autocomplete="off">
+                <input type="text" name="q" id="q" placeholder="Search apps — Enter searches the web" autocomplete="off">
                 <span class="hint"><kbd>/</kbd><kbd>↵ web</kbd></span>
             </form>
         </div>
     </div>
 
     <main>
-        <div class="stats-strip" id="stats-strip" hidden>
-            <div class="stat" id="stat-services"><span class="label">Services</span><span class="value">—</span></div>
-            <div class="stat" id="stat-cpu"><span class="label">CPU</span><span class="value">—</span></div>
-            <div class="stat" id="stat-mem"><span class="label">Memory</span><span class="value">—</span></div>
-            <div class="stat" id="stat-disk"><span class="label">Disk</span><span class="value">—</span></div>
-            <div class="stat" id="stat-temp"><span class="label">Temp</span><span class="value">—</span></div>
-            <div class="stat" id="stat-uptime"><span class="label">Uptime</span><span class="value">—</span></div>
-        </div>
-        <section id="services"></section>
-        <aside>
-            <div class="rail-head">
-                <h2>Latest from your feeds</h2>
-                <a href="http://100.116.81.88:8081" target="_blank" rel="noopener">Open Miniflux →</a>
+        <div class="app-rail" id="app-rail"></div>
+
+        <div class="widgets">
+            <div class="widget" id="system-widget" hidden>
+                <h2>System</h2>
+                <div class="stats-strip" id="stats-strip">
+                    <div class="stat" id="stat-services"><span class="label">Services</span><span class="value">—</span></div>
+                    <div class="stat" id="stat-cpu"><span class="label">CPU</span><span class="value">—</span></div>
+                    <div class="stat" id="stat-mem"><span class="label">Memory</span><span class="value">—</span></div>
+                    <div class="stat" id="stat-disk"><span class="label">Disk</span><span class="value">—</span></div>
+                    <div class="stat" id="stat-temp"><span class="label">Temp</span><span class="value">—</span></div>
+                    <div class="stat" id="stat-uptime"><span class="label">Uptime</span><span class="value">—</span></div>
+                </div>
             </div>
-            <div class="news-list" id="news-list">
-                <div class="news-empty" id="news-empty">Loading…</div>
-            </div>
-            <div class="mail-section" id="mail-section" hidden>
-                <div class="rail-head"><h2>Mail — last 30 days</h2></div>
+
+            <div class="widget" id="mail-section" hidden>
+                <h2>Mail — last 30 days</h2>
                 <div class="mail-card">
                     <div class="mail-headline" id="mail-headline"></div>
                     <div class="mail-bars" id="mail-bars" title="emails per day, last 14 days"></div>
@@ -535,7 +466,16 @@
                     <div class="mail-senders" id="mail-senders"></div>
                 </div>
             </div>
-        </aside>
+
+            <div class="widget wide">
+                <h2>Latest from your feeds
+                    <a href="http://100.116.81.88:8081" target="_blank" rel="noopener">Open Miniflux →</a>
+                </h2>
+                <div class="news-list" id="news-list">
+                    <div class="news-empty" id="news-empty">Loading…</div>
+                </div>
+            </div>
+        </div>
     </main>
 
     <script>
@@ -570,23 +510,22 @@
             external: "External"
         };
 
-        const grid = document.getElementById('services');
+        const grid = document.getElementById('app-rail');
         const input = document.getElementById('q');
 
         function cardEl(s) {
             const a = document.createElement('a');
-            a.className = 'card';
+            a.className = 'app';
             a.href = s.url;
             a.dataset.name = s.name.toLowerCase();
-            if (s.category === 'external' || !s.url.includes('100.116.81.88') && !s.url.includes('tailb9a8bb')) {
+            a.title = s.name + (s.port ? ' · :' + s.port : '');
+            if (s.category === 'external' || (!s.url.includes('100.116.81.88') && !s.url.includes('tailb9a8bb'))) {
                 a.target = '_blank';
                 a.rel = 'noopener';
             }
             if (s.logo) {
                 const img = document.createElement('img');
-                img.src = s.logo;
-                img.alt = '';
-                img.loading = 'lazy';
+                img.src = s.logo; img.alt = ''; img.loading = 'lazy';
                 img.onerror = () => img.replaceWith(fallbackIcon(s.name));
                 a.appendChild(img);
             } else {
@@ -596,35 +535,12 @@
             name.className = 'name';
             name.textContent = s.name;
             a.appendChild(name);
-            if (s.port) {
-                const port = document.createElement('span');
-                port.className = 'port';
-                port.textContent = ':' + s.port;
-                a.appendChild(port);
-            } else {
-                const ext = document.createElement('span');
-                ext.className = 'ext';
-                ext.textContent = '↗';
-                a.appendChild(ext);
-            }
             if (s.svc) {
                 const dot = document.createElement('span');
                 dot.className = 'dot';
                 dot.dataset.svc = s.svc;
                 a.appendChild(dot);
             }
-            const pin = document.createElement('button');
-            pin.className = 'pin' + (pins.has(s.name) ? ' pinned' : '');
-            pin.textContent = pins.has(s.name) ? '★' : '☆';
-            pin.title = pins.has(s.name) ? 'Unpin' : 'Pin to top';
-            pin.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                pins.has(s.name) ? pins.delete(s.name) : pins.add(s.name);
-                localStorage.setItem('pins', JSON.stringify([...pins]));
-                rerender();
-            });
-            a.appendChild(pin);
             return a;
         }
 
@@ -638,47 +554,17 @@
         const pins = new Set(JSON.parse(localStorage.getItem('pins') || '[]'));
 
         function render() {
-            const pinned = services
-                .filter(s => pins.has(s.name))
-                .sort((a, b) => a.name.localeCompare(b.name));
-            if (pinned.length) {
-                const section = document.createElement('div');
-                section.className = 'category';
-                const head = document.createElement('div');
-                head.className = 'category-head';
-                const h = document.createElement('h2');
-                h.textContent = 'Pinned';
-                head.appendChild(h);
-                const g = document.createElement('div');
-                g.className = 'service-grid';
-                pinned.forEach(s => g.appendChild(cardEl(s)));
-                section.append(head, g);
-                grid.appendChild(section);
-            }
-            for (const cat of categoryOrder) {
-                const items = services
-                    .filter(s => s.category === cat && !pins.has(s.name))
-                    .sort((a, b) => a.name.localeCompare(b.name));
-                if (!items.length) continue;
-                const section = document.createElement('div');
-                section.className = 'category';
-                section.dataset.category = cat;
-                const head = document.createElement('div');
-                head.className = 'category-head';
-                const h = document.createElement('h2');
-                h.textContent = categoryLabels[cat];
-                const count = document.createElement('span');
-                count.className = 'count';
-                count.textContent = items.length;
-                head.append(h, count);
-                const g = document.createElement('div');
-                g.className = 'service-grid';
-                items.forEach(s => g.appendChild(cardEl(s)));
-                section.append(head, g);
-                grid.appendChild(section);
-            }
+            const order = { external: 2 };
+            const sorted = [...services].sort((a, b) => {
+                const pa = pins.has(a.name) ? 0 : 1, pb = pins.has(b.name) ? 0 : 1;
+                if (pa !== pb) return pa - pb;
+                const ca = order[a.category] || 1, cb = order[b.category] || 1;
+                if (ca !== cb) return ca - cb;
+                return a.name.localeCompare(b.name);
+            });
+            sorted.forEach(s => grid.appendChild(cardEl(s)));
             const empty = document.createElement('div');
-            empty.className = 'empty-state';
+            empty.className = 'rail-empty';
             empty.id = 'empty-state';
             empty.hidden = true;
             grid.appendChild(empty);
@@ -687,22 +573,21 @@
         function applyFilter() {
             const q = input.value.trim().toLowerCase();
             let visible = 0;
-            document.querySelectorAll('.card').forEach(c => {
+            document.querySelectorAll('.app').forEach(c => {
                 const match = !q || c.dataset.name.includes(q);
                 c.classList.toggle('hidden', !match);
                 if (match) visible++;
             });
-            document.querySelectorAll('.category').forEach(sec => {
-                sec.style.display = sec.querySelector('.card:not(.hidden)') ? '' : 'none';
-            });
+            // searching reveals the names; idle keeps the rail compact
+            grid.classList.toggle('expanded', !!q);
             const empty = document.getElementById('empty-state');
             empty.hidden = visible > 0;
             if (!visible) {
                 empty.innerHTML = '';
-                empty.append('No matching service — press ');
+                empty.append('No matching app — press ');
                 const k = document.createElement('kbd');
                 k.textContent = 'Enter';
-                empty.append(k, ' to search the web for “' + input.value.trim() + '”');
+                empty.append(k, ' to search the web for \u201c' + input.value.trim() + '\u201d');
             }
         }
 
@@ -807,7 +692,7 @@
                     });
                     setStat('stat-services', up + '/' + tracked,
                         up === tracked ? '' : 'crit');
-                    document.getElementById('stats-strip').hidden = false;
+                    document.getElementById('system-widget').hidden = false;
                 })
                 .catch(() => {});
         }
@@ -855,7 +740,7 @@
                         : (uptime.value * 24).toFixed(0) + 'h');
                     any = true;
                 }
-                if (any) document.getElementById('stats-strip').hidden = false;
+                if (any) document.getElementById('system-widget').hidden = false;
             });
             loadSparkline();
         }
