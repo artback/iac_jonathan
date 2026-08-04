@@ -65,7 +65,7 @@ job "mailbot" {
         destination = "local/bot.py"
         change_mode = "restart"
         data        = <<EOH
-import email, email.header, email.utils, imaplib, json, os, sqlite3, threading, time, urllib.request
+import email, email.header, email.utils, imaplib, json, os, re, sqlite3, threading, time, urllib.request
 
 HOST = os.environ["IMAP_HOST"]
 USER = os.environ["IMAP_USER"]
@@ -245,21 +245,60 @@ def classify(sender, subject, body):
     summary = str(result.get("summary") or subject)[:200]
     return cat, imp, summary
 
+KIND_TEST = {
+    "orders": "a shipment/delivery notice for a physical parcel with a tracking number",
+    "travel": "a confirmed booking for a specific journey the recipient is taking",
+    "finance": "a bill, invoice or payment request with a real amount owed",
+}
+
+def grounded(quote, body, subject):
+    """True if the model's cited snippet really occurs in the email.
+
+    The extractor is asked to quote the exact text it read a date/amount from.
+    Anything it can't cite, it invented — which is how a satisfaction survey
+    became a bill and a travel advisory became a flight departing today."""
+    q = (quote or "").strip().lower()
+    if len(q) < 3:
+        return False
+    hay = (subject + " " + body).lower()
+    if q in hay:
+        return True
+    # tolerate whitespace/punctuation noise between the words it quoted
+    words = [w for w in re.split(r"[^0-9a-zà-ÿ]+", q) if len(w) > 1]
+    return bool(words) and all(w in hay for w in words)
+
 def extract(c, uid, kind, sender, subject, body):
     schema = EXTRACT_SCHEMAS.get(kind)
     if not schema:
         return None
-    r = llm("Extract structured details from this email. Reply ONLY with JSON: "
-            + schema + ". Do not invent values."
-            + DATE_RULE.format(today=time.strftime("%Y-%m-%d"))
-            + "\n\nFrom: " + sender + "\nSubject: " + subject + "\nBody: " + body[:1500])
+    fields = schema.rstrip().rstrip("}")
+    prompt = ("Extract structured details from this email. Reply ONLY with JSON: "
+              + fields + ', "confirmed": true only if this email really is '
+              + KIND_TEST[kind]
+              + " (false for adverts, surveys, security alerts, verification "
+                'codes, newsletters, or anything merely mentioning one), '
+                '"quote": the exact words from the email that state the date, '
+                'copied verbatim; empty string if the email states none}. '
+                "Never guess or fill in a field that is not written in the email."
+              + DATE_RULE.format(today=time.strftime("%Y-%m-%d"))
+              + "\n\nFrom: " + sender + "\nSubject: " + subject
+              + "\nBody: " + body[:1500])
+    r = llm(prompt)
     if not isinstance(r, dict):
         return None
-    r = {k: clean(v) for k, v in r.items()}
+    if r.get("confirmed") is not True:
+        return None
+    quote = r.pop("quote", "")
+    r = {k: clean(v) for k, v in r.items() if k != "confirmed"}
     r = {k: v for k, v in r.items() if v}
     # a record without its defining field is noise, not data
     needs = {"orders": "tracking_number", "travel": "date", "finance": "due_date"}
-    if needs.get(kind) and not r.get(needs[kind]):
+    key = needs.get(kind)
+    if key and not r.get(key):
+        return None
+    # the defining value must be traceable to words actually in the email
+    if key in ("date", "due_date") and not grounded(quote, body, subject):
+        print("dropped ungrounded", kind, "uid", uid, "quote:", repr(quote)[:60], flush=True)
         return None
     c.execute("INSERT OR REPLACE INTO extracts (uid, ts, kind, data) VALUES (?,?,?,?)",
               (uid, int(time.time()), kind, json.dumps(r)))
