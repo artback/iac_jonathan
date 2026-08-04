@@ -127,6 +127,10 @@ def db():
     c = sqlite3.connect(DB)
     c.execute("CREATE TABLE IF NOT EXISTS mail (uid INTEGER PRIMARY KEY, ts INTEGER, "
               "sender TEXT, subject TEXT, category TEXT, importance TEXT, summary TEXT)")
+    try:
+        c.execute("ALTER TABLE mail ADD COLUMN action INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # already there
     c.execute("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS leads (key TEXT PRIMARY KEY, ts INTEGER, "
               "company TEXT, role TEXT, location TEXT, deadline TEXT, stage TEXT, "
@@ -510,9 +514,10 @@ def poll(c):
                 except Exception as e:
                     print("classify error:", e, flush=True)
                     cat, imp, summary, action = "other", "normal", subject, False
-            c.execute("INSERT OR IGNORE INTO mail (uid, ts, sender, subject, category, importance, summary) "
-                      "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                      (uid, int(time.time()), sender, subject, cat, imp, summary))
+            c.execute("INSERT OR IGNORE INTO mail (uid, ts, sender, subject, category, "
+                      "importance, summary, action) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                      (uid, int(time.time()), sender, subject, cat, imp, summary,
+                       1 if action else 0))
             c.commit()
             meta_set(c, "last_uid", uid)
             body = body_text(msg)
@@ -665,39 +670,42 @@ def digest(c, force=False):
         if time.localtime().tm_hour != DIGEST_HOUR or meta_get(c, "last_digest") == today:
             return
     meta_set(c, "last_digest", today)
-    rows = c.execute("SELECT category, summary FROM mail WHERE ts > ? ORDER BY category",
-                     (int(time.time()) - 86400,)).fetchall()
+    rows = c.execute("SELECT category, summary, action, sender FROM mail WHERE ts > ? "
+                     "ORDER BY category", (int(time.time()) - 86400,)).fetchall()
     packages, travel, bills = logistics(c)
-    if not rows and not packages and not travel:
+    if not rows and not packages and not travel and not bills:
         return
-    by_cat = {}
-    noise_count = 0
-    for cat, summary in rows:
-        if cat in NOISE:
-            noise_count += 1
-        else:
-            by_cat.setdefault(cat, []).append(summary)
-    msg = "☕ Morning digest — " + str(len(rows)) + " email" + ("s" if len(rows) != 1 else "") + "\n"
-    if travel:
-        msg += "\n✈️ UPCOMING TRAVEL\n"
-        for t in travel:
-            msg += fmt_travel(t) + "\n"
-    if packages:
-        msg += "\n📦 PACKAGES IN FLIGHT\n"
-        for p in packages:
-            msg += fmt_package(p) + "\n"
-    if bills:
-        msg += "\n💶 DUE SOON\n"
-        for b in bills:
-            msg += fmt_bill(b) + "\n"
-    for cat in CATS:
-        if cat not in by_cat:
-            continue
-        msg += "\n" + ICONS.get(cat, "✉️") + " " + cat.upper() + "\n"
-        for s in by_cat[cat]:
-            msg += "• " + s + "\n"
-    if noise_count:
-        msg += "\n🔇 " + str(noise_count) + " marketing/newsletter email" + ("s" if noise_count != 1 else "") + " ignored\n"
+    # A digest should be a verdict, not an inbox reprint: what needs you, what
+    # is coming, and a single number for everything already dealt with.
+    todo = [(s, sender) for cat, s, act, sender in rows
+            if act and cat not in NOISE]
+    handled = len(rows) - len(todo)
+    day = time.strftime("%A")
+    if todo:
+        msg = "☕ " + day + " — " + str(len(todo)) + " thing" + ("s" if len(todo) != 1 else "") + " need you\n\n"
+        for i, (s, sender) in enumerate(todo, 1):
+            who = sender.split("<")[0].strip().strip('"') or sender
+            msg += str(i) + ". " + s + "\n   — " + who[:40] + "\n"
+    else:
+        msg = "☕ " + day + " — nothing needs you\n"
+    ahead = []
+    for t in travel:
+        ahead.append(fmt_travel(t))
+    for p in packages:
+        ahead.append(fmt_package(p))
+    for b in bills:
+        ahead.append(fmt_bill(b))
+    if ahead:
+        msg += "\nComing up\n" + "\n".join(ahead) + "\n"
+    if handled:
+        counts = {}
+        for cat, _s, act, _sender in rows:
+            if not act or cat in NOISE:
+                counts[cat] = counts.get(cat, 0) + 1
+        detail = " · ".join(str(v) + " " + k for k, v in
+                            sorted(counts.items(), key=lambda kv: -kv[1]))
+        msg += "\n" + str(handled) + " other" + ("s" if handled != 1 else "") \
+               + " noted, nothing to do  (" + detail + ")\n"
     if time.localtime().tm_wday == 0:
         top_noise = c.execute("SELECT sender, count, unsub FROM noise WHERE last_ts > ? "
                               "ORDER BY count DESC LIMIT 5", (int(time.time()) - 30 * 86400,)).fetchall()
