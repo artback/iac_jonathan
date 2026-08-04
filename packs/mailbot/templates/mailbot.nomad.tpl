@@ -110,10 +110,27 @@ EXTRACT_SCHEMAS = {
 JUNK_VALUES = {"", "empty", "none", "null", "n/a", "na", "unknown", "-", "?",
                "string", "iso date", "not stated", "not specified"}
 
+JUNK_PATTERN = re.compile(
+    r"^\W*(none|no|not|n/?a|null|nil|empty|unknown|unspecified|undefined"
+    r"|string|iso ?date|tbd|tba|missing|absent|aucun|non)\b"
+    r"[\s\w]*(specified|provided|stated|given|available|mentioned|found|set)?\W*$",
+    re.I)
+
 def clean(value):
-    """Models like to write the literal word 'empty' into optional fields."""
+    """Drop the placeholder phrases models write into fields they can't fill.
+
+    Exact-match lists lose this game — 'none specified', 'not provided',
+    'no destination given' are all inventions of the same impulse — so match
+    the shape instead."""
     v = str(value or "").strip()
-    return "" if v.lower() in JUNK_VALUES else v[:80]
+    if not v or JUNK_PATTERN.match(v) or v.lower() in JUNK_VALUES:
+        return ""
+    return v[:80]
+
+def iso_day(s):
+    """Normalise whatever date shape the model returns to YYYY-MM-DD."""
+    v = str(s or "").strip()
+    return v[:10] if re.match(r"^\d{4}-\d{2}-\d{2}", v) else v
 
 def parse_date(s):
     """ISO first, then a few shapes that slip through. None if unparseable."""
@@ -349,6 +366,9 @@ def extract(c, uid, kind, sender, subject, body):
         return None
     quote = r.pop("quote", "")
     r = {k: clean(v) for k, v in r.items() if k != "confirmed"}
+    for k in ("date", "due_date", "eta"):
+        if r.get(k):
+            r[k] = iso_day(r[k])
     r = {k: v for k, v in r.items() if v}
     # a record without its defining field is noise, not data
     needs = {"orders": "tracking_number", "travel": "date", "finance": "due_date"}
@@ -805,23 +825,38 @@ def write_stats(c):
         dst.write(src.read())
     os.unlink("/statsout/mailstats.json.tmp")
 
+MODE_ICON = {"flight": "\u2708\ufe0f", "train": "\U0001F686",
+             "bus": "\U0001F68C", "ferry": "\u26F4"}
+
+def pretty_day(iso):
+    t = parse_date(iso)
+    return time.strftime("%a %d %b", time.localtime(t)).replace(" 0", " ") if t else (iso or "")
+
 def fmt_travel(t):
-    who = " ".join(filter(None, [t.get("carrier"), t.get("number")])) or t.get("mode", "Trip")
-    route = ""
-    if t.get("from") and t.get("to") and t["from"] != t["to"]:
-        route = " " + t["from"] + "→" + t["to"]
-    elif t.get("from"):
-        route = " from " + t["from"]
-    return ("• " + t.get("date", "") + "  " + who + route
-            + (" · ref " + t["reference"] if t.get("reference") else ""))
+    bits = [MODE_ICON.get(t.get("mode"), "\u2022"), pretty_day(t.get("date"))]
+    who = " ".join(x for x in (t.get("carrier"), t.get("number")) if x)
+    if who:
+        bits.append(who)
+    frm, to = t.get("from"), t.get("to")
+    if frm and to and frm != to:
+        bits.append(frm + " \u2192 " + to)
+    elif frm or to:
+        bits.append(frm or to)
+    ref = t.get("reference")
+    if ref and ref != t.get("number"):
+        bits.append("\u00b7 " + ref)
+    return " ".join(b for b in bits if b)
 
 def fmt_package(p):
-    return ("• " + (p.get("merchant") or "Order")
-            + " — " + " ".join(filter(None, [p.get("carrier"), p.get("tracking_number")]))
-            + (" · ETA " + p["eta"] if p.get("eta") else ""))
+    bits = ["\U0001F4E6", p.get("merchant") or "Parcel"]
+    if p.get("carrier"):
+        bits.append("via " + p["carrier"])
+    if p.get("eta"):
+        bits.append("arrives " + pretty_day(p["eta"]))
+    return " ".join(bits)
 
 def fmt_bill(b):
-    return ("• " + b.get("due_date", "") + "  " + (b.get("payee") or "?")
+    return ("\U0001F4B6 " + pretty_day(b.get("due_date")) + "  " + (b.get("payee") or "?")
             + (" " + b["amount"] if b.get("amount") else ""))
 
 def command(c, text):
