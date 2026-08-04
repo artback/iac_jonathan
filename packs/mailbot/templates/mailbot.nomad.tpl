@@ -278,6 +278,22 @@ NEVER_NOTIFY = re.compile(
     r"|has been (charged|debited)|prélèvement",
     re.I)
 
+# Transport operators whose booking references look exactly like tracking
+# numbers. A model that reads "SJ W9ALNG5B" with no other signal will call it
+# a parcel; this overrides that regardless of what it decides.
+TRAVEL_SENDERS = re.compile(
+    r"\b(sj|sj\.se|sncf|sncf-connect|trainline|omio|flixbus|blablacar"
+    r"|ryanair|easyjet|air ?france|klm|lufthansa|norwegian|sas|transavia"
+    r"|vueling|brussels ?airlines|eurostar|thalys|renfe|trenitalia|db bahn"
+    r"|deutsche ?bahn|booking\.com|airbnb|hotels\.com|expedia|corsica ?ferries"
+    r"|brittany ?ferries|vasttrafik|västtrafik|skanetrafiken|rmt|lepilote)\b", re.I)
+
+def fix_category(cat, sender, subject):
+    """One deterministic correction: transport mail is travel, never a parcel."""
+    if cat == "orders" and TRAVEL_SENDERS.search(sender + " " + subject):
+        return "travel"
+    return cat
+
 def should_notify(cat, imp, action, subject, summary):
     """A ping must earn the interruption: right category, genuinely actionable,
     and not one of the self-service/FYI shapes above. Email stays a pull medium
@@ -289,8 +305,8 @@ def should_notify(cat, imp, action, subject, summary):
     return action and imp == "high"
 
 KIND_TEST = {
-    "orders": "a shipment/delivery notice for a physical parcel with a tracking number",
-    "travel": "a confirmed booking for a specific journey the recipient is taking",
+    "orders": "a courier delivering physical goods to the recipient — a real parcel with a carrier tracking number. A travel ticket or booking reference is NOT a shipment",
+    "travel": "a ticket or confirmed booking for a journey the recipient takes (train, flight, bus, ferry, hotel)",
     "finance": "a bill, invoice or payment request with a real amount owed",
 }
 
@@ -517,6 +533,7 @@ def poll(c):
             else:
                 try:
                     cat, imp, summary, action = classify(sender, subject, body_text(msg))
+                    cat = fix_category(cat, sender, subject)
                     llm_budget -= 1
                     meta_set(c, "llm_calls", int(meta_get(c, "llm_calls", "0")) + 1)
                 except Exception as e:
@@ -658,6 +675,7 @@ def drain_pending(c, budget):
                     print("single classify failed:", e2, flush=True)
                     verdicts.append(("other", "normal"))
         for (uid, ts, sender, subject, body), (cat, imp) in zip(chunk, verdicts):
+            cat = fix_category(cat, sender, subject)
             c.execute("INSERT OR IGNORE INTO mail (uid, ts, sender, subject, category, "
                       "importance, summary) VALUES (?,?,?,?,?,?,?)",
                       (uid, ts, sender, subject, cat, imp, subject[:200]))
