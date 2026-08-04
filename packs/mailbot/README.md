@@ -78,11 +78,19 @@ default keep-alive plus 2-minute polling would pin that permanently on a box
 running ~20 other services, so every call passes `keep_alive` (default `30s`,
 the `keep_alive` var) — measured to release the memory promptly between bursts.
 
-## Passive by default
+## Quiet by default
 
-`notify_categories` is empty in this deployment: **the bot never pushes**.
-Everything waits for the 08:00 digest, which is written as a verdict rather
-than an inbox reprint —
+Three layers of restraint, because a mail agent should be smarter than email,
+not another thing demanding attention:
+
+1. **No per-email pings** — `notify_categories` is empty here.
+2. **Silent delivery** — every message uses Telegram's `disable_notification`
+   (`silent` var): it appears in the chat, never makes a sound.
+3. **Nothing to say → says nothing.** The digest is skipped entirely on days
+   with no task, no imminent trip/bill (7 days) and no parcel in transit. No
+   daily "all clear" message — silence *is* the all-clear.
+
+When it does speak, it's a verdict rather than an inbox reprint —
 
 ```
 ☕ Tuesday — 2 things need you
