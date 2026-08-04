@@ -52,6 +52,7 @@ job "mailbot" {
           MODEL="[[ var "model" . ]]"
           KEEP_ALIVE="[[ var "keep_alive" . ]]"
           DIGEST_HOUR="[[ var "digest_hour" . ]]"
+          NOTIFY_CATEGORIES="[[ var "notify_categories" . ]]"
           CATEGORIES="[[ range $k, $v := (var "categories" .) ]][[ $k ]]=[[ $v ]]|[[ end ]]"
           TRACKED="[[ range $t := (var "tracked" .) ]][[ $t ]],[[ end ]]"
           PROFILE="[[ var "profile" . ]]"
@@ -94,6 +95,7 @@ ICONS = {"urgent": "🚨", "job": "💼", "finance": "💶", "personal": "💬",
          "orders": "📦", "travel": "✈️", "newsletter": "📰", "marketing": "🔇",
          "other": "✉️"}
 NOISE = {"newsletter", "marketing"}
+NOTIFY_CATEGORIES = {x.strip() for x in os.environ.get("NOTIFY_CATEGORIES", "urgent").split(",") if x.strip()}
 DATE_RULE = (" All dates MUST be ISO format YYYY-MM-DD (today is {today}; if the "
              "email omits the year, infer the nearest sensible one). Omit any "
              "field you cannot determine — never write the words empty, none, "
@@ -237,13 +239,42 @@ def classify(sender, subject, body):
     result = llm("Classify this email into exactly one category:\n" + cat_lines
                  + '\n\nReply ONLY with JSON: {"category": "<name>", '
                  '"importance": one of [high,normal,low], '
-                 '"summary": one sentence max 15 words}.'
+                 '"action_required": true ONLY if the recipient must personally '
+                 'do something with a real consequence or deadline. Receipts, '
+                 'confirmations, payment notifications, login codes, security '
+                 'notices about actions already taken, adverts and newsletters '
+                 'are all false — they are information, not tasks. '
+                 '"summary": one sentence max 15 words describing ONLY what the '
+                 'email actually says; never speculate, dramatise or add alarm}.'
                  + "\n\nFrom: " + sender + "\nSubject: " + subject
                  + "\nBody: " + body[:1500])
     cat = result.get("category") if result.get("category") in CATS else "other"
     imp = result.get("importance") if result.get("importance") in ("high", "normal", "low") else "normal"
     summary = str(result.get("summary") or subject)[:200]
-    return cat, imp, summary
+    action = result.get("action_required") is True
+    return cat, imp, summary, action
+
+# Things that are self-service by definition: you already went to the inbox to
+# get them, so a push notification is pure noise (and arrives second).
+NEVER_NOTIFY = re.compile(
+    r"\b(\d{4,8})\b.{0,30}\b(code|otp)\b"          # "290855 is your code"
+    r"|\b(code|otp)\b.{0,30}\b(\d{4,8})\b"          # "your code is 290855"
+    r"|verification|verify your|two.?factor|2fa|one.?time"
+    r"|mot de passe|code de (v[ée]rification|connexion)"
+    r"|paiement carte|payment (notification|received|confirmation)"
+    r"|receipt|reçu de paiement|confirmation de (paiement|commande)"
+    r"|has been (charged|debited)|prélèvement",
+    re.I)
+
+def should_notify(cat, imp, action, subject, summary):
+    """A ping must earn the interruption: right category, genuinely actionable,
+    and not one of the self-service/FYI shapes above. Email stays a pull medium
+    by default — the digest is where non-urgent things belong."""
+    if NEVER_NOTIFY.search(subject + " " + summary):
+        return False
+    if cat in NOISE or cat not in NOTIFY_CATEGORIES:
+        return False
+    return action and imp == "high"
 
 KIND_TEST = {
     "orders": "a shipment/delivery notice for a physical parcel with a tracking number",
@@ -467,17 +498,18 @@ def poll(c):
             sender = decode(msg.get("From"))
             subject = decode(msg.get("Subject")) or "(no subject)"
             skipped = prefilter(msg, sender, subject)
+            action = False
             if skipped:
                 cat, imp, summary = skipped, "low", subject[:200]
                 meta_set(c, "llm_skipped", int(meta_get(c, "llm_skipped", "0")) + 1)
             else:
                 try:
-                    cat, imp, summary = classify(sender, subject, body_text(msg))
+                    cat, imp, summary, action = classify(sender, subject, body_text(msg))
                     llm_budget -= 1
                     meta_set(c, "llm_calls", int(meta_get(c, "llm_calls", "0")) + 1)
                 except Exception as e:
                     print("classify error:", e, flush=True)
-                    cat, imp, summary = "other", "normal", subject
+                    cat, imp, summary, action = "other", "normal", subject, False
             c.execute("INSERT OR IGNORE INTO mail (uid, ts, sender, subject, category, importance, summary) "
                       "VALUES (?, ?, ?, ?, ?, ?, ?)",
                       (uid, int(time.time()), sender, subject, cat, imp, summary))
@@ -501,7 +533,7 @@ def poll(c):
                     print("extract error:", e, flush=True)
             if cat in NOISE:
                 continue
-            if imp == "high" or cat == "urgent":
+            if should_notify(cat, imp, action, subject, summary):
                 say(ICONS.get(cat, "✉️") + " " + cat.upper() + " — " + summary
                     + "\n\nFrom: " + sender + "\nSubject: " + subject)
     finally:
@@ -607,7 +639,7 @@ def drain_pending(c, budget):
             verdicts = []
             for _, _, sender, subject, body in chunk:
                 try:
-                    cat, imp, _ = classify(sender, subject, body)
+                    cat, imp, _, _a = classify(sender, subject, body)
                     verdicts.append((cat, imp))
                 except Exception as e2:
                     print("single classify failed:", e2, flush=True)

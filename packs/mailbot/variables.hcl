@@ -50,6 +50,12 @@ variable "keep_alive" {
   default     = "30s"
 }
 
+variable "notify_categories" {
+  description = "Categories allowed to interrupt with a push. Everything else waits for the digest. Empty = digest only."
+  type        = string
+  default     = "urgent"
+}
+
 variable "digest_hour" {
   description = "Local hour (0-23) for the daily digest."
   type        = number
