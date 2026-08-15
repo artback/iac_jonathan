@@ -10,15 +10,13 @@ job "fabio" {
       mode     = "delay"
     }
     network {
-      mode = "bridge"
-
+      # Host networking (matches the live job): Fabio must reach the
+      # node-local Consul on loopback, which bridge mode can't.
       port "lb" {
         static = [[ var "lb_port" . ]]
-        to     = 9999
       }
       port "ui" {
         static = [[ var "ui_port" . ]]
-        to     = 9998
       }
     }
 
@@ -28,14 +26,14 @@ job "fabio" {
         CONSUL_IP = "[[ var "service_ip" . ]]"
       }
       config {
-        image = "[[ var "image" . ]]"
-        ports = ["lb", "ui"]
+        image        = "[[ var "image" . ]]"
+        network_mode = "host"
+        ports        = ["lb", "ui"]
         args = [
           // Forces Fabio's service IP to the Tailscale IP
           "-proxy.localip=[[ var "service_ip" . ]]",
 
-          // Forces the Consul connection address to the host's routable IP
-          "-registry.consul.addr=[[ var "service_ip" . ]]:8500",
+          "-registry.consul.addr=[[ var "consul_addr" . ]]",
         ]
       }
       resources {

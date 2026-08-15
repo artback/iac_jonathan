@@ -6,7 +6,14 @@ bind_addr =  "0.0.0.0"
 # SERVER CONFIGURATION
 server {
   enabled = {{ nomad_server_enabled | lower }}
+{% if nomad_server_enabled | bool %}
   bootstrap_expect = {{ nomad_bootstrap_expect }}
+{% if nomad_server_join_ips %}
+  server_join {
+    retry_join = {{ nomad_server_join_ips | to_json }}
+  }
+{% endif %}
+{% endif %}
 }
 
 # CLIENT CONFIGURATION

@@ -4,6 +4,16 @@
 *.ipr
 *iml
 
-vars/
-/dashboard/
+# Service vars may contain secrets (DB passwords etc.) — keep untracked, but
+# allow examples through. Must be `vars/*` + negation, not `vars/`: git cannot
+# un-ignore a file inside an ignored directory.
+vars/*
+!vars/*.example.hcl
+
+# Real inventory may contain a Tailscale auth key.
 ansible/inventory.ini
+
+/dashboard/
+
+# macOS finder junk
+.DS_Store

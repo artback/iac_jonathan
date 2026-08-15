@@ -1,7 +1,13 @@
 variable "datacenters" {
   description = "The datacenters where the job should run."
   type        = list(string)
-  default     = ["dc1"]
+  default     = ["kalmar"]
+}
+
+variable "backup_dir" {
+  description = "Host directory the nightly pg_dumpall lands in (7-day rotation). Must exist on the node."
+  type        = string
+  default     = "/home/dwight/backups/postgres"
 }
 
 variable "docker_volume_name" {

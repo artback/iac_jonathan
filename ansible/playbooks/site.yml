@@ -1,4 +1,7 @@
 ---
+# Provision cluster nodes. Safe to re-run; scope to one node with:
+#   ansible-playbook -i inventory.ini playbooks/site.yml --limit <ip>
+# (wrapped by `task node:provision HOST=<ip>` from the repo root)
 - name: Setup Nomad and Consul Cluster
   hosts: all
   become: yes

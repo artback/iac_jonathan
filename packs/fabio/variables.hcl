@@ -7,7 +7,7 @@ variable "job_name" {
 variable "datacenters" {
   description = "The datacenters where the job should run."
   type        = list(string)
-  default     = ["dc1"]
+  default     = ["kalmar"]
 }
 
 variable "type" {
@@ -55,4 +55,10 @@ variable "memory" {
 variable "service_ip" {
   description = "The IP address used for service discovery"
   type        = string
+}
+
+variable "consul_addr" {
+  description = "Consul HTTP address Fabio connects to. Fabio runs with host networking, so loopback reaches the node-local agent (which may be loopback-only under mTLS)."
+  type        = string
+  default     = "127.0.0.1:8500"
 }

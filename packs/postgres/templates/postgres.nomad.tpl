@@ -20,8 +20,16 @@ job "postgres" {
       config {
         image = "postgres:[[ var "pg_version" . ]]-alpine"
         ports = ["db"]
-        volumes = [
-          "[[ var "docker_volume_name" . ]]:/var/lib/postgresql",
+        # Named Docker volume. NOT the `volumes = ["name:path"]` shorthand:
+        # Nomad treats a relative source there as a path inside the alloc dir,
+        # which is deleted on GC — that's how the original data was lost.
+        mounts = [
+          {
+            type     = "volume"
+            source   = "[[ var "docker_volume_name" . ]]"
+            target   = "/var/lib/postgresql"
+            readonly = false
+          }
         ]
       }
 

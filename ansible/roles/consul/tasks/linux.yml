@@ -1,15 +1,27 @@
 ---
-- name: Download Consul
-  ansible.builtin.get_url:
-    url: "https://releases.hashicorp.com/consul/1.16.1/consul_1.16.1_linux_amd64.zip"
-    dest: "/tmp/consul.zip"
-    mode: '0644'
+- name: Check installed Consul version
+  ansible.builtin.command: /usr/local/bin/consul version
+  register: consul_installed
+  changed_when: false
+  failed_when: false
 
-- name: Unzip Consul
-  ansible.builtin.unarchive:
-    src: "/tmp/consul.zip"
-    dest: "/usr/local/bin/"
-    remote_src: yes
+- name: Install Consul binary
+  when:
+    - not (consul_skip_install | bool)
+    - consul_installed.rc != 0 or ("Consul v" ~ consul_version) not in consul_installed.stdout
+  block:
+    - name: Download Consul
+      ansible.builtin.get_url:
+        url: "https://releases.hashicorp.com/consul/{{ consul_version }}/consul_{{ consul_version }}_linux_{{ consul_arch }}.zip"
+        dest: "/tmp/consul.zip"
+        mode: '0644'
+
+    - name: Unzip Consul
+      ansible.builtin.unarchive:
+        src: "/tmp/consul.zip"
+        dest: "/usr/local/bin/"
+        remote_src: yes
+      notify: Restart Consul
 
 - name: Create Consul group
   ansible.builtin.group:
@@ -41,6 +53,7 @@
     owner: consul
     group: consul
     mode: '0644'
+  when: consul_manage_config | bool
   notify: Restart Consul
 
 - name: Create Consul systemd service
@@ -66,6 +79,7 @@
 
       [Install]
       WantedBy=multi-user.target
+  when: consul_manage_config | bool
   notify: Restart Consul
 
 - name: Start Consul service

@@ -1,15 +1,27 @@
 ---
-- name: Download Nomad
-  ansible.builtin.get_url:
-    url: "https://releases.hashicorp.com/nomad/1.6.1/nomad_1.6.1_linux_amd64.zip"
-    dest: "/tmp/nomad.zip"
-    mode: '0644'
+- name: Check installed Nomad version
+  ansible.builtin.command: /usr/local/bin/nomad version
+  register: nomad_installed
+  changed_when: false
+  failed_when: false
 
-- name: Unzip Nomad
-  ansible.builtin.unarchive:
-    src: "/tmp/nomad.zip"
-    dest: "/usr/local/bin/"
-    remote_src: yes
+- name: Install Nomad binary
+  when:
+    - not (nomad_skip_install | bool)
+    - nomad_installed.rc != 0 or ("Nomad v" ~ nomad_version) not in nomad_installed.stdout
+  block:
+    - name: Download Nomad
+      ansible.builtin.get_url:
+        url: "https://releases.hashicorp.com/nomad/{{ nomad_version }}/nomad_{{ nomad_version }}_linux_{{ nomad_arch }}.zip"
+        dest: "/tmp/nomad.zip"
+        mode: '0644'
+
+    - name: Unzip Nomad
+      ansible.builtin.unarchive:
+        src: "/tmp/nomad.zip"
+        dest: "/usr/local/bin/"
+        remote_src: yes
+      notify: Restart Nomad
 
 - name: Create Nomad group
   ansible.builtin.group:
@@ -41,6 +53,7 @@
     owner: nomad
     group: nomad
     mode: '0644'
+  when: nomad_manage_config | bool
   notify: Restart Nomad
 
 - name: Create Nomad systemd service
@@ -69,6 +82,7 @@
 
       [Install]
       WantedBy=multi-user.target
+  when: nomad_manage_config | bool
   notify: Restart Nomad
 
 - name: Start Nomad service

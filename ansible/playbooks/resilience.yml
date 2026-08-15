@@ -11,7 +11,7 @@
 #
 #   ansible-playbook -i inventory.ini playbooks/resilience.yml \
 #     -e resilience_telegram_token=123456:ABC... \
-#     -e resilience_telegram_chat_id=485643205
+#     -e resilience_telegram_chat_id=<your Telegram chat id>
 #
 - name: Harden the Consul/Nomad control plane against boot races
   hosts: servers
