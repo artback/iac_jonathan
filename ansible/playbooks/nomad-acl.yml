@@ -1,0 +1,21 @@
+---
+# Opt-in ACL enablement. Separate playbook because this is the one change in
+# the repo that can lock you out of your own cluster.
+#
+#   ansible-playbook playbooks/nomad-acl.yml -e nomad_acl_enable=true
+#
+# Then, on your machine, bootstrap and store the SecretID somewhere durable:
+#
+#   nomad acl bootstrap
+#
+# `tasks_from` is only valid on include_role/import_role — putting it in a
+# `roles:` list silently runs the role's main.yml instead, which is not what
+# you want from a playbook whose whole purpose is one specific task file.
+- name: Enable Nomad ACLs
+  hosts: servers
+  become: true
+  tasks:
+    - name: Run the ACL enablement tasks
+      ansible.builtin.include_role:
+        name: resilience
+        tasks_from: nomad-acl

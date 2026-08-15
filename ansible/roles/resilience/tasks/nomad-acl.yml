@@ -1,0 +1,62 @@
+---
+# Enable Nomad ACLs.
+#
+# Without ACLs, Nomad Variables give encryption at rest and keep secrets out of
+# job specs, but no access control: any holder of the mTLS client cert reads
+# every variable. This closes that gap.
+#
+# Deliberately NOT part of the role's main.yml — it is opt-in via
+# `-e nomad_acl_enable=true`, because it is the one change here that can lock
+# you out of your own cluster if the bootstrap token is lost.
+#
+# Rollback: restore /etc/nomad.d/nomad.hcl.pre-acl and restart nomad. Existing
+# allocations keep running throughout; ACLs gate the API, not the schedulers.
+
+- name: Fail early if the operator has not opted in
+  ansible.builtin.assert:
+    that: nomad_acl_enable | default(false) | bool
+    fail_msg: >-
+      Refusing to enable ACLs implicitly. Re-run with -e nomad_acl_enable=true
+      once you have somewhere safe to put the bootstrap token.
+
+- name: Back up the pre-ACL Nomad config
+  ansible.builtin.copy:
+    src: /etc/nomad.d/nomad.hcl
+    dest: /etc/nomad.d/nomad.hcl.pre-acl
+    remote_src: true
+    force: false
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Enable ACLs in the live Nomad config
+  ansible.builtin.replace:
+    path: /etc/nomad.d/nomad.hcl
+    after: '^acl \{'
+    before: '^\}'
+    regexp: '^\s*enabled\s*=\s*false'
+    replace: '  enabled    = true'
+  notify: Restart Nomad agent
+
+- name: Apply the restart before bootstrapping
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the Nomad API to answer again
+  ansible.builtin.uri:
+    url: "https://{{ resilience_bind_address }}:4646/v1/agent/health"
+    validate_certs: false
+    status_code: [200, 403]
+  register: nomad_health
+  until: nomad_health.status in [200, 403]
+  retries: 12
+  delay: 5
+
+# A 403 here is the success signal: the API is up and now refusing
+# unauthenticated reads, which is the whole point.
+- name: Report that ACLs are live
+  ansible.builtin.debug:
+    msg: >-
+      Nomad ACLs are enabled (health endpoint returned
+      {{ nomad_health.status }}). Bootstrap next, on the operator's machine:
+      `nomad acl bootstrap`. Store the SecretID immediately — it cannot be
+      retrieved again, and without it the cluster cannot be administered.
