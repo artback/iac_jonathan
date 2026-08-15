@@ -34,7 +34,13 @@ job "printbot" {
         env         = true
         change_mode = "restart"
         data        = <<EOH
-          TELEGRAM_TOKEN="[[ var "telegram_token" . ]]"
+          {{/* Secret lives in Nomad Variables, not in the job spec: nomad var
+               put nomad/jobs/printbot telegram_token=... Rendered by
+               consul-template at task start, so `nomad job inspect` shows this
+               template rather than the token itself. */}}
+          {{ with nomadVar "nomad/jobs/printbot" }}
+          TELEGRAM_TOKEN="{{ .telegram_token }}"
+          {{ end }}
           ALLOWED_CHAT_IDS="[[ var "allowed_chat_ids" . ]]"
           CUPS_SERVER="[[ var "cups_server" . ]]"
           PRINTER="[[ var "printer" . ]]"

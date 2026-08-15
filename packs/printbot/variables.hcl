@@ -4,11 +4,6 @@ variable "datacenters" {
   default     = ["kalmar"]
 }
 
-variable "telegram_token" {
-  description = "Telegram bot token from @BotFather (secret — set in vars file)."
-  type        = string
-}
-
 variable "allowed_chat_ids" {
   description = "Comma-separated Telegram chat IDs allowed to print. Empty = bot replies to anyone with their ID but prints nothing (discovery mode)."
   type        = string
