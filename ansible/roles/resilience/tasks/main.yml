@@ -1,0 +1,185 @@
+---
+# Boot-order resilience, deterministic address selection, and alerting for the
+# Consul/Nomad control plane.
+#
+# Deliberately narrow: this role only writes systemd drop-ins, one Nomad client
+# setting, and the watchdog. It never installs or upgrades Consul or Nomad. The
+# consul/ and nomad/ roles still pin the versions this cluster was bootstrapped
+# with (Consul 1.16.1, Nomad 1.6.1, amd64, /usr/local/bin) while the live host
+# runs Consul 1.22.7 and Nomad 2.0.2 from the HashiCorp apt repo in /usr/bin --
+# so running those roles against this host would downgrade it. This one is safe
+# to run against the live cluster.
+
+- name: Install control-plane helper scripts
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/sbin/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - wait-for-bind-addr
+    - homelab-alert
+    - homelab-watchdog
+
+# --- Alert credentials -------------------------------------------------------
+
+- name: Create the alert credentials file
+  ansible.builtin.copy:
+    dest: /etc/homelab-alert.env
+    owner: root
+    group: root
+    mode: "0600"
+    force: false
+    content: |
+      # Credentials for the homelab alert bot, read by /usr/local/sbin/homelab-alert.
+      # Create a dedicated bot with @BotFather, then send it one message from your
+      # own account so Telegram will let it reply to you.
+      TELEGRAM_TOKEN=
+      TELEGRAM_CHAT_ID=
+
+- name: Set the alert bot credentials
+  ansible.builtin.lineinfile:
+    path: /etc/homelab-alert.env
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - { key: "TELEGRAM_TOKEN", value: "{{ resilience_telegram_token }}" }
+    - { key: "TELEGRAM_CHAT_ID", value: "{{ resilience_telegram_chat_id }}" }
+  when: item.value | length > 0
+  no_log: true
+
+# --- systemd drop-ins --------------------------------------------------------
+
+- name: Create systemd drop-in directories
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - consul
+    - nomad
+
+# Numbered 20- so it merges after the existing hand-written 2026-07-07
+# override.conf (Type=exec, which works around Consul never sending READY=1
+# with a TLS block). Both drop-ins apply; that one is left untouched.
+- name: Install the Consul boot-resilience drop-in
+  ansible.builtin.template:
+    src: consul-boot-resilience.conf.j2
+    dest: /etc/systemd/system/consul.service.d/20-boot-resilience.conf
+    owner: root
+    group: root
+    mode: "0644"
+  # A daemon-reload is enough: Restart=, StartLimitIntervalSec= and
+  # ExecStartPre= all take effect at the agent's next start. Restarting Consul
+  # to apply them would re-render every consul-template stanza in the cluster
+  # and churn allocations for no reason.
+  notify: Reload systemd
+
+- name: Install the Nomad boot-resilience drop-in
+  ansible.builtin.template:
+    src: nomad-boot-resilience.conf.j2
+    dest: /etc/systemd/system/nomad.service.d/20-boot-resilience.conf
+    owner: root
+    group: root
+    mode: "0644"
+  # As above -- only the client.hcl change below actually needs a restart.
+  notify: Reload systemd
+
+- name: Install the failed-unit alert handler
+  ansible.builtin.template:
+    src: homelab-alert@.service.j2
+    dest: /etc/systemd/system/homelab-alert@.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+# --- Deterministic address selection ----------------------------------------
+
+# tailscale0 carries three addresses: the IPv4 /32, a ULA IPv6, and a
+# link-local IPv6. Without this setting Nomad picks between them per
+# allocation, and allocations that drew the link-local fe80:: address
+# registered service entries Consul can never health-check -- an HTTP check
+# against a link-local address has no zone index, so it never even runs.
+# Observed on miniflux, mealie, n8n and changedetection after the Consul
+# restart of 2026-08-15.
+- name: Pin Nomad to IPv4 when selecting interface addresses
+  ansible.builtin.lineinfile:
+    path: /etc/nomad.d/client.hcl
+    regexp: '^\s*preferred_address_family\s*='
+    line: '  preferred_address_family = "ipv4"'
+    insertafter: '^\s*network_interface\s*='
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Nomad agent
+
+# --- Watchdog ----------------------------------------------------------------
+
+- name: Create the watchdog state directory
+  ansible.builtin.file:
+    path: /var/lib/homelab-watchdog
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the watchdog configuration
+  ansible.builtin.template:
+    src: homelab-watchdog.env.j2
+    dest: /etc/homelab-watchdog.env
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the watchdog service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - homelab-watchdog.service
+    - homelab-watchdog.timer
+  notify: Reload systemd
+
+- name: Flush handlers before enabling the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the watchdog timer
+  ansible.builtin.systemd:
+    name: homelab-watchdog.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+
+# --- Verification ------------------------------------------------------------
+
+- name: Verify Consul has a leader
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8500/v1/status/leader
+    return_content: true
+  register: consul_leader
+  until: consul_leader.content | default('""') not in ['""', '']
+  retries: 12
+  delay: 5
+
+- name: Verify the Nomad client is ready
+  ansible.builtin.command: nomad node status -self -short
+  environment:
+    NOMAD_ADDR: "https://{{ resilience_bind_address }}:4646"
+    NOMAD_CACERT: /etc/certs/nomad/nomad-agent-ca.pem
+    NOMAD_CLIENT_CERT: /etc/certs/nomad/{{ nomad_region | default('europe') }}-server-nomad.pem
+    NOMAD_CLIENT_KEY: /etc/certs/nomad/{{ nomad_region | default('europe') }}-server-nomad-key.pem
+  register: nomad_self
+  changed_when: false
+  until: "'ready' in nomad_self.stdout"
+  retries: 12
+  delay: 5

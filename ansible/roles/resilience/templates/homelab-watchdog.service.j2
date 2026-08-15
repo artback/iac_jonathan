@@ -1,0 +1,12 @@
+# Managed by ansible (roles/resilience). Do not edit by hand.
+
+[Unit]
+Description=Homelab control-plane health probe
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/homelab-watchdog
+# The script exits 1 to report "unhealthy" so it is useful to run by hand.
+# That is a finding, not a unit failure -- do not let it mark the unit failed.
+SuccessExitStatus=0 1

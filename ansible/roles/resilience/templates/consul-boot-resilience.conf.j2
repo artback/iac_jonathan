@@ -1,0 +1,28 @@
+# Managed by ansible (roles/resilience). Do not edit by hand.
+#
+# Why this exists: on the 2026-08-13 reboot, Consul started before tailscaled
+# had assigned {{ resilience_bind_address }} to {{ resilience_bind_interface }} and exited with
+# "Failed to start RPC layer: bind: cannot assign requested address". systemd
+# retried 5 times within half a second, hit the default start-rate limit, gave
+# up with "Start request repeated too quickly", and never tried again. Tailscale
+# came up seconds later. Consul stayed dead for two days, which silently emptied
+# the service catalog and broke Fabio routing for every app.
+#
+# Two independent guards, either of which alone would have prevented it:
+#   1. Do not race  -- order after tailscaled and block until the address is up.
+#   2. Never give up -- retry forever if it somehow still fails.
+
+[Unit]
+Wants=tailscaled.service
+After=tailscaled.service
+# The default (5 starts per 10s, then permanent failure) is precisely what
+# turned a transient boot race into a two-day outage. 0 disables the limit.
+StartLimitIntervalSec=0
+OnFailure=homelab-alert@%n.service
+
+[Service]
+# Ordering alone is not enough: tailscaled signals READY before the tailnet
+# address exists, so gate on the address itself.
+ExecStartPre=/usr/local/sbin/wait-for-bind-addr {{ resilience_bind_interface }} {{ resilience_bind_address }} {{ resilience_bind_timeout }}
+Restart=always
+RestartSec=5s

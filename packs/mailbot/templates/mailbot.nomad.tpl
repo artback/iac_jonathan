@@ -529,6 +529,29 @@ def uid_search(imap, criterion):
         return []
     return [int(x) for x in data[0].split()]
 
+def unread_uids():
+    """UIDs still unread in the inbox, or None if the mailbox can't be reached.
+
+    None means "don't know" and is deliberately not an empty set: callers fall
+    back to filtering nothing, so a mail outage degrades to the old chatty
+    behaviour rather than silently swallowing everything that needs you.
+    """
+    imap = None
+    try:
+        imap = imaplib.IMAP4_SSL(HOST)
+        imap.login(USER, PASSWORD)
+        imap.select("INBOX", readonly=True)
+        return set(uid_search(imap, "UNSEEN"))
+    except Exception as e:
+        print("unread lookup failed:", e, flush=True)
+        return None
+    finally:
+        if imap is not None:
+            try:
+                imap.logout()
+            except Exception:
+                pass
+
 def poll(c):
     imap = imaplib.IMAP4_SSL(HOST)
     try:
@@ -550,8 +573,19 @@ def poll(c):
                 # can't monopolise the Pi's CPU (UID cursor stays put)
                 print("llm budget spent, resuming next cycle", flush=True)
                 break
-            _, fetched = imap.uid("fetch", str(uid), "(BODY.PEEK[])")
+            # FLAGS rides along in the same round trip. BODY.PEEK[] still means
+            # reading the mail never marks it read; FLAGS tells us whether you
+            # already have. Which element carries the flags varies by server, so
+            # scan every part except the raw body.
+            _, fetched = imap.uid("fetch", str(uid), "(FLAGS BODY.PEEK[])")
             raw = fetched[0][1] if fetched and fetched[0] else None
+            meta_parts = []
+            for part in fetched or []:
+                if isinstance(part, tuple):
+                    meta_parts.append(part[0] or b"")
+                elif isinstance(part, bytes):
+                    meta_parts.append(part)
+            already_read = b"\\Seen" in b" ".join(meta_parts)
             if not raw:
                 meta_set(c, "last_uid", uid)
                 continue
@@ -595,6 +629,10 @@ def poll(c):
                 except Exception as e:
                     print("extract error:", e, flush=True)
             if cat in NOISE:
+                continue
+            # You read it on your phone before this cycle came round — the ping
+            # would be telling you something you already know.
+            if already_read:
                 continue
             if should_notify(cat, imp, action, subject, summary):
                 say(ICONS.get(cat, "✉️") + " " + cat.upper() + " — " + summary
@@ -734,10 +772,22 @@ def digest(c, force=False):
         if time.localtime().tm_hour != DIGEST_HOUR or meta_get(c, "last_digest") == today:
             return
     meta_set(c, "last_digest", today)
-    rows = c.execute("SELECT category, summary, action, sender FROM mail WHERE ts > ? "
+    rows = c.execute("SELECT uid, category, summary, action, sender FROM mail WHERE ts > ? "
                      "ORDER BY category", (int(time.time()) - 86400,)).fetchall()
     packages, travel, bills = logistics(c)
-    has_todo = any(act and cat not in NOISE for cat, _s, act, _snd in rows)
+
+    # The digest exists to say what still needs you. Something classified as
+    # actionable at 09:00 and read at 09:05 has already done its job — printing
+    # it again at 18:00 is what turned the digest into an inbox reprint.
+    # \Seen is the mailbox's own record of that, so ask it rather than guess.
+    unread = unread_uids()
+
+    def needs_you(uid, cat, act):
+        return bool(act) and cat not in NOISE and (unread is None or uid in unread)
+
+    todo = [(s, sender) for uid, cat, s, act, sender in rows
+            if needs_you(uid, cat, act)]
+    has_todo = bool(todo)
     imminent = [x for x in (travel + bills) if soon(x)]
     # Silence is the default state. A daily "nothing needs you" is still a
     # daily interruption — if there's no task and nothing imminent, say
@@ -747,9 +797,9 @@ def digest(c, force=False):
         print("digest: nothing worth saying, staying quiet", flush=True)
         return
     # A digest should be a verdict, not an inbox reprint: what needs you, what
-    # is coming, and a single number for everything already dealt with.
-    todo = [(s, sender) for cat, s, act, sender in rows
-            if act and cat not in NOISE]
+    # is coming, and a single number for everything already dealt with. Mail you
+    # have since read falls out of `todo` and lands in `handled` on its own,
+    # which is exactly right — you did handle it.
     handled = len(rows) - len(todo)
     day = time.strftime("%A")
     if todo:
@@ -773,8 +823,8 @@ def digest(c, force=False):
         msg += "\nComing up\n" + "\n".join(ahead) + "\n"
     if handled:
         counts = {}
-        for cat, _s, act, _sender in rows:
-            if not act or cat in NOISE:
+        for uid, cat, _s, act, _sender in rows:
+            if not needs_you(uid, cat, act):
                 counts[cat] = counts.get(cat, 0) + 1
         detail = " · ".join(str(v) + " " + k for k, v in
                             sorted(counts.items(), key=lambda kv: -kv[1]))

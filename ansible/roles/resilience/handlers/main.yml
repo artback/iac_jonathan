@@ -1,0 +1,18 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+# Both agents are restarted with the synchronous systemd module on purpose.
+# An async fire-and-forget restart has left Nomad stopped on this host before.
+- name: Restart Consul agent
+  ansible.builtin.systemd:
+    name: consul
+    state: restarted
+    daemon_reload: true
+
+- name: Restart Nomad agent
+  ansible.builtin.systemd:
+    name: nomad
+    state: restarted
+    daemon_reload: true

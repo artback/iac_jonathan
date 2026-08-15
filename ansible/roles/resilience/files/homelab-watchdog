@@ -1,0 +1,91 @@
+#!/bin/sh
+# Periodic health probe for the homelab control plane.
+#
+# systemd's OnFailure= only fires when a unit reaches the "failed" state. The
+# 2026-08-13 outage is a reminder that this is not enough on its own: Consul was
+# dead for two days while every workload kept running, so nothing crashed
+# loudly and nothing noticed. This probe asks the questions that actually
+# matter -- is there a Consul leader, are services registered, does the public
+# URL still answer -- and alerts on the answers.
+#
+# Alerts fire on transitions only (healthy -> unhealthy and back), so a lasting
+# outage produces one message rather than one every interval.
+#
+# Managed by ansible (roles/resilience). Do not edit by hand.
+set -u
+
+ENV_FILE=/etc/homelab-watchdog.env
+[ -r "$ENV_FILE" ] && . "$ENV_FILE"
+
+CONSUL_ADDR=${CONSUL_ADDR:-http://127.0.0.1:8500}
+WATCHED_UNITS=${WATCHED_UNITS:-consul nomad docker tailscaled}
+IGNORED_CHECK_SERVICES=${IGNORED_CHECK_SERVICES:-}
+PROBE_URL=${PROBE_URL:-}
+STATE_FILE=${STATE_FILE:-/var/lib/homelab-watchdog/state}
+
+problems=""
+
+note() {
+	problems="${problems}
+• $1"
+}
+
+# 1. The units themselves.
+for unit in $WATCHED_UNITS; do
+	if ! systemctl is-active --quiet "$unit"; then
+		note "$unit is $(systemctl is-active "$unit" 2>&1)"
+	fi
+done
+
+# 2. Consul must have a leader. A running-but-leaderless agent still answers on
+#    :8500 while every catalog write fails, which no is-active check would spot.
+leader=$(curl -sf --max-time 5 "$CONSUL_ADDR/v1/status/leader" 2>/dev/null || true)
+case "$leader" in
+	'""' | '') note "consul has no leader" ;;
+esac
+
+# 3. Critical service checks, minus the ones known to be permanently wrong.
+if [ -n "$leader" ] && [ "$leader" != '""' ]; then
+	critical=$(curl -sf --max-time 5 "$CONSUL_ADDR/v1/health/state/critical" 2>/dev/null |
+		tr '{' '\n' | sed -n 's/.*"ServiceName":"\([^"]*\)".*/\1/p' | sort -u)
+	for svc in $critical; do
+		[ -z "$svc" ] && continue
+		ignored=0
+		for skip in $IGNORED_CHECK_SERVICES; do
+			[ "$svc" = "$skip" ] && ignored=1
+		done
+		[ "$ignored" -eq 0 ] && note "consul check critical: $svc"
+	done
+fi
+
+# 4. End-to-end probe of the public entry point.
+if [ -n "$PROBE_URL" ]; then
+	code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$PROBE_URL" 2>/dev/null || echo 000)
+	case "$code" in
+		2* | 3*) ;;
+		*) note "$PROBE_URL returned HTTP $code" ;;
+	esac
+fi
+
+# Report only on a change of state.
+mkdir -p "$(dirname "$STATE_FILE")"
+previous=""
+[ -r "$STATE_FILE" ] && previous=$(cat "$STATE_FILE")
+
+if [ -n "$problems" ]; then
+	current="unhealthy"
+	message="🚨 <b>Homelab unhealthy</b> ($(hostname))${problems}"
+else
+	current="healthy"
+	message="✅ <b>Homelab recovered</b> ($(hostname))"
+fi
+
+if [ "$current" != "$previous" ]; then
+	# Say nothing on the very first run if all is well -- no news is not news.
+	if [ -n "$previous" ] || [ "$current" = "unhealthy" ]; then
+		/usr/local/sbin/homelab-alert "$message"
+	fi
+	printf '%s' "$current" >"$STATE_FILE"
+fi
+
+[ "$current" = "healthy" ]

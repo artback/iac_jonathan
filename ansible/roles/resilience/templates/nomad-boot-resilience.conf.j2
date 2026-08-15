@@ -1,0 +1,22 @@
+# Managed by ansible (roles/resilience). Do not edit by hand.
+#
+# Nomad is exposed to the same boot race as Consul: its advertise block resolves
+# GetInterfaceIP "{{ resilience_bind_interface }}" at startup, which fails if tailscaled has not
+# configured the interface yet. It survived the 2026-08-13 reboot by luck of
+# timing, not by design.
+#
+# Nomad is also ordered after Consul so that allocations are restored with their
+# service registrations intact. That ordering is Wants=, never Requires=: Nomad
+# keeps workloads running perfectly well without Consul, and a Consul failure
+# must never take Nomad down with it.
+
+[Unit]
+Wants=tailscaled.service consul.service
+After=tailscaled.service consul.service
+StartLimitIntervalSec=0
+OnFailure=homelab-alert@%n.service
+
+[Service]
+ExecStartPre=/usr/local/sbin/wait-for-bind-addr {{ resilience_bind_interface }} {{ resilience_bind_address }} {{ resilience_bind_timeout }}
+Restart=always
+RestartSec=5s
