@@ -16,11 +16,6 @@ variable "base_url" {
   default     = "http://100.116.81.88:8888/"
 }
 
-variable "secret_key" {
-  description = "SearXNG secret key (secret — set in vars file)."
-  type        = string
-}
-
 variable "config_volume" {
   description = "The docker named volume for /etc/searxng."
   type        = string

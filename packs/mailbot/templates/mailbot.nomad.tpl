@@ -45,8 +45,8 @@ job "mailbot" {
         data        = <<EOH
           IMAP_HOST="[[ var "imap_host" . ]]"
           IMAP_USER="[[ var "imap_user" . ]]"
-          IMAP_PASSWORD="[[ var "imap_password" . ]]"
-          TELEGRAM_TOKEN="[[ var "telegram_token" . ]]"
+          IMAP_PASSWORD="{{ with nomadVar "nomad/jobs/mailbot" }}{{ .imap_password }}{{ end }}"
+          TELEGRAM_TOKEN="{{ with nomadVar "nomad/jobs/mailbot" }}{{ .telegram_token }}{{ end }}"
           CHAT_ID="[[ var "chat_id" . ]]"
           OLLAMA_URL="[[ var "ollama_url" . ]]"
           MODEL="[[ var "model" . ]]"

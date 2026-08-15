@@ -4,11 +4,6 @@ variable "datacenters" {
   default     = ["kalmar"]
 }
 
-variable "telegram_token" {
-  description = "Telegram bot token (secret — set in vars file). Needs its own bot: only one process may poll a token."
-  type        = string
-}
-
 variable "chat_id" {
   description = "The only chat allowed to use the bot."
   type        = string
@@ -23,11 +18,6 @@ variable "calibre_url" {
 
 variable "calibre_user" {
   description = "Calibre-Web username (secret — set in vars file)."
-  type        = string
-}
-
-variable "calibre_password" {
-  description = "Calibre-Web password (secret — set in vars file)."
   type        = string
 }
 

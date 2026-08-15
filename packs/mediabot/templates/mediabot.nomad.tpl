@@ -26,12 +26,12 @@ job "mediabot" {
         env         = true
         change_mode = "restart"
         data        = <<EOH
-          TELEGRAM_TOKEN="[[ var "telegram_token" . ]]"
+          TELEGRAM_TOKEN="{{ with nomadVar "nomad/jobs/mediabot" }}{{ .telegram_token }}{{ end }}"
           ALLOWED_CHAT_IDS="[[ var "allowed_chat_ids" . ]]"
           RADARR_URL="[[ var "radarr_url" . ]]"
-          RADARR_KEY="[[ var "radarr_api_key" . ]]"
+          RADARR_KEY="{{ with nomadVar "nomad/jobs/mediabot" }}{{ .radarr_api_key }}{{ end }}"
           SONARR_URL="[[ var "sonarr_url" . ]]"
-          SONARR_KEY="[[ var "sonarr_api_key" . ]]"
+          SONARR_KEY="{{ with nomadVar "nomad/jobs/mediabot" }}{{ .sonarr_api_key }}{{ end }}"
         EOH
       }
 

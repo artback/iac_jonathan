@@ -34,7 +34,7 @@ job "searxng" {
         change_mode = "restart"
         data        = <<EOH
           SEARXNG_BASE_URL="[[ var "base_url" . ]]"
-          SEARXNG_SECRET="[[ var "secret_key" . ]]"
+          SEARXNG_SECRET="{{ with nomadVar "nomad/jobs/searxng" }}{{ .secret_key }}{{ end }}"
           TZ="Europe/Stockholm"
         EOH
       }

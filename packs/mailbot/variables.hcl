@@ -16,16 +16,6 @@ variable "imap_user" {
   default     = "jonathan_artback@icloud.com"
 }
 
-variable "imap_password" {
-  description = "IMAP app-specific password (secret — set in vars file)."
-  type        = string
-}
-
-variable "telegram_token" {
-  description = "Telegram bot token used for sending (secret — set in vars file). Send-only: safe to share with printbot."
-  type        = string
-}
-
 variable "chat_id" {
   description = "Telegram chat that receives pings and the digest."
   type        = string

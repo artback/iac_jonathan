@@ -30,11 +30,11 @@ job "librarianbot" {
         env         = true
         change_mode = "restart"
         data        = <<EOH
-          TELEGRAM_TOKEN="[[ var "telegram_token" . ]]"
+          TELEGRAM_TOKEN="{{ with nomadVar "nomad/jobs/librarianbot" }}{{ .telegram_token }}{{ end }}"
           CHAT_ID="[[ var "chat_id" . ]]"
           CALIBRE_URL="[[ var "calibre_url" . ]]"
           CALIBRE_USER="[[ var "calibre_user" . ]]"
-          CALIBRE_PASSWORD="[[ var "calibre_password" . ]]"
+          CALIBRE_PASSWORD="{{ with nomadVar "nomad/jobs/librarianbot" }}{{ .calibre_password }}{{ end }}"
           SILENT="[[ var "silent" . ]]"
         EOH
       }
