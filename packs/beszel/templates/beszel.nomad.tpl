@@ -98,8 +98,8 @@ job "beszel" {
         data        = <<EOH
           LISTEN="45876"
           HUB_URL="[[ var "agent_hub_url" . ]]"
-          TOKEN="[[ var "agent_token" . ]]"
-          KEY="[[ var "agent_key" . ]]"
+          TOKEN="{{ with nomadVar "nomad/jobs/beszel" }}{{ .agent_token }}{{ end }}"
+          KEY="{{ with nomadVar "nomad/jobs/beszel" }}{{ .agent_key }}{{ end }}"
           PRIMARY_SENSOR="[[ var "primary_sensor" . ]]"
           NICS="[[ var "nics" . ]]"
           DATA_DIR="/var/lib/beszel-agent"

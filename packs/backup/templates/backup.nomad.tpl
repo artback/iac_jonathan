@@ -59,7 +59,7 @@ job "backup" {
           PGPORT="5432"
           {{ end }}
           PGUSER="[[ var "pg_user" . ]]"
-          PGPASSWORD="[[ var "pg_password" . ]]"
+          PGPASSWORD="{{ with nomadVar "nomad/jobs/backup" }}{{ .pg_password }}{{ end }}"
         EOH
       }
 

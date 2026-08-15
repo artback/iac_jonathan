@@ -46,16 +46,6 @@ variable "agent_hub_url" {
   default     = "http://100.116.81.88:8090"
 }
 
-variable "agent_token" {
-  description = "The WebSocket registration token for the agent (secret — set in vars file)."
-  type        = string
-}
-
-variable "agent_key" {
-  description = "The hub's public SSH key(s) for agent authentication."
-  type        = string
-}
-
 variable "agent_privileged" {
   description = "Run the agent privileged. Required for S.M.A.R.T. disk health (device access)."
   type        = bool

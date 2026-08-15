@@ -28,20 +28,10 @@ variable "pg_root_user" {
   default     = "postgres"
 }
 
-variable "db_postgresdb_root_password" {
-  description = "The root password for Postgres."
-  type        = string
-}
-
 variable "db_postgresdb_user" {
   description = "The database user for Mealie."
   type        = string
   default     = "mealie"
-}
-
-variable "db_postgresdb_password" {
-  description = "The database password for Mealie."
-  type        = string
 }
 
 variable "db_postgresdb_database" {

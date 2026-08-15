@@ -38,9 +38,9 @@ job "mealie" {
           {{ end }}
           
           ROOT_DB_USER="[[ var "pg_root_user" . ]]"
-          ROOT_DB_PASS="[[ var "db_postgresdb_root_password" . ]]"
+          ROOT_DB_PASS="{{ with nomadVar "nomad/jobs/mealie" }}{{ .db_postgresdb_root_password }}{{ end }}"
           NEW_DB_USER="[[ var "db_postgresdb_user" . ]]"
-          NEW_DB_PASS="[[ var "db_postgresdb_password" . ]]"
+          NEW_DB_PASS="{{ with nomadVar "nomad/jobs/mealie" }}{{ .db_postgresdb_password }}{{ end }}"
           NEW_DB_NAME="[[ var "db_postgresdb_database" . ]]"
         EOH
       }
@@ -89,7 +89,7 @@ job "mealie" {
           # Mealie DB Connection Settings
           DB_TYPE="postgres"
           POSTGRES_USER="[[ var "db_postgresdb_user" . ]]"
-          POSTGRES_PASSWORD="[[ var "db_postgresdb_password" . ]]"
+          POSTGRES_PASSWORD="{{ with nomadVar "nomad/jobs/mealie" }}{{ .db_postgresdb_password }}{{ end }}"
           POSTGRES_SCHEMA="[[ var "db_postgresdb_schema" . ]]"
           POSTGRES_DB="[[ var "db_postgresdb_database" . ]]"
           

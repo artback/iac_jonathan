@@ -16,11 +16,6 @@ variable "pg_user" {
   default     = "postgres"
 }
 
-variable "pg_password" {
-  description = "The postgres superuser password (secret — set in vars file)."
-  type        = string
-}
-
 variable "local_backup_dir" {
   description = "Backup destination on the NVMe (same disk as the data — first copy)."
   type        = string

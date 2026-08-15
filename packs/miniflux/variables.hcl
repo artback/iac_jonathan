@@ -22,31 +22,16 @@ variable "admin_username" {
   default     = "jonathan"
 }
 
-variable "admin_password" {
-  description = "Initial admin password (secret — set in vars file, min 6 chars)."
-  type        = string
-}
-
 variable "pg_root_user" {
   description = "The root user for Postgres (to create the miniflux db/user)."
   type        = string
   default     = "postgres"
 }
 
-variable "db_root_password" {
-  description = "The root password for Postgres (secret — set in vars file)."
-  type        = string
-}
-
 variable "db_user" {
   description = "The database user for Miniflux."
   type        = string
   default     = "miniflux"
-}
-
-variable "db_password" {
-  description = "The database password for Miniflux (secret — set in vars file)."
-  type        = string
 }
 
 variable "db_name" {

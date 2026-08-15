@@ -38,9 +38,9 @@ job "miniflux" {
           {{ end }}
 
           ROOT_DB_USER="[[ var "pg_root_user" . ]]"
-          ROOT_DB_PASS="[[ var "db_root_password" . ]]"
+          ROOT_DB_PASS="{{ with nomadVar "nomad/jobs/miniflux" }}{{ .db_root_password }}{{ end }}"
           NEW_DB_USER="[[ var "db_user" . ]]"
-          NEW_DB_PASS="[[ var "db_password" . ]]"
+          NEW_DB_PASS="{{ with nomadVar "nomad/jobs/miniflux" }}{{ .db_password }}{{ end }}"
           NEW_DB_NAME="[[ var "db_name" . ]]"
         EOH
       }
@@ -81,16 +81,16 @@ job "miniflux" {
         data = <<EOH
           {{ with service "postgres" }}
           {{ with index . 0 }}
-          DATABASE_URL="postgres://[[ var "db_user" . ]]:[[ var "db_password" . ]]@{{ .Address }}:{{ .Port }}/[[ var "db_name" . ]]?sslmode=disable"
+          DATABASE_URL="postgres://[[ var "db_user" . ]]:{{ with nomadVar "nomad/jobs/miniflux" }}{{ .db_password }}{{ end }}@{{ .Address }}:{{ .Port }}/[[ var "db_name" . ]]?sslmode=disable"
           {{ end }}
           {{ else }}
-          DATABASE_URL="postgres://[[ var "db_user" . ]]:[[ var "db_password" . ]]@100.116.81.88:5432/[[ var "db_name" . ]]?sslmode=disable"
+          DATABASE_URL="postgres://[[ var "db_user" . ]]:{{ with nomadVar "nomad/jobs/miniflux" }}{{ .db_password }}{{ end }}@100.116.81.88:5432/[[ var "db_name" . ]]?sslmode=disable"
           {{ end }}
 
           RUN_MIGRATIONS="1"
           CREATE_ADMIN="1"
           ADMIN_USERNAME="[[ var "admin_username" . ]]"
-          ADMIN_PASSWORD="[[ var "admin_password" . ]]"
+          ADMIN_PASSWORD="{{ with nomadVar "nomad/jobs/miniflux" }}{{ .admin_password }}{{ end }}"
           BASE_URL="[[ var "base_url" . ]]"
           TZ="Europe/Stockholm"
         EOH
