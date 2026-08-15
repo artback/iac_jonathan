@@ -1,0 +1,37 @@
+#!/bin/sh
+# homelab-alert <message...>
+#
+# Push a message to the homelab alert bot on Telegram. Credentials come from
+# /etc/homelab-alert.env (root-only), so the token never appears in a unit file,
+# a process listing, or the journal.
+#
+# Exits 0 when unconfigured: the watchdog and the OnFailure units must not
+# themselves fail just because the bot token has not been filled in yet.
+#
+# Managed by ansible (roles/resilience). Do not edit by hand.
+set -u
+
+ENV_FILE=/etc/homelab-alert.env
+
+if [ ! -r "$ENV_FILE" ]; then
+	echo "homelab-alert: $ENV_FILE is missing; dropping message: $*" >&2
+	exit 0
+fi
+
+# shellcheck source=/dev/null
+. "$ENV_FILE"
+
+if [ -z "${TELEGRAM_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+	echo "homelab-alert: bot not configured yet; dropping message: $*" >&2
+	exit 0
+fi
+
+if ! curl -sf --max-time 15 -o /dev/null \
+	-X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+	--data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+	--data-urlencode "text=$*" \
+	--data-urlencode "parse_mode=HTML"; then
+	# Never leak the token into the journal on failure.
+	echo "homelab-alert: delivery to Telegram failed" >&2
+	exit 1
+fi

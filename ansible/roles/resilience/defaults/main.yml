@@ -1,0 +1,35 @@
+---
+# Interface and address that Consul binds to and that Nomad's advertise block
+# resolves with GetInterfaceIP. Both agents fail to start if this address is
+# not up yet, so the units below gate on it.
+resilience_bind_interface: "tailscale0"
+resilience_bind_address: "100.116.81.88"
+# How long the units wait for the address before giving up on a single attempt.
+# They retry forever, so this is a per-attempt bound, not a deadline.
+resilience_bind_timeout: 120
+
+# Units the watchdog expects to be active.
+resilience_watched_units:
+  - consul
+  - nomad
+  - docker
+  - tailscaled
+
+# Consul checks that are known-bad and must not trigger alerts. Nomad
+# self-registers its health checks against http://0.0.0.0:4646, which has been
+# wrong since the mTLS migration -- Nomad itself is healthy.
+resilience_ignored_check_services:
+  - nomad
+  - nomad-client
+
+# End-to-end probe: the public entry point, proving Tailscale Serve, Fabio and
+# Consul-driven routing all still work. Empty string disables the probe.
+resilience_probe_url: "https://raspberrypi.tailb9a8bb.ts.net/"
+
+resilience_watchdog_interval: "5min"
+
+# Telegram credentials for alerts. Set these in an inventory var, a vars file,
+# or with --extra-vars; the role leaves any existing values alone when unset,
+# so the watchdog can be installed before the bot exists.
+resilience_telegram_token: ""
+resilience_telegram_chat_id: ""

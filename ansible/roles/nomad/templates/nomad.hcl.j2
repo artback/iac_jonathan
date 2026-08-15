@@ -13,6 +13,11 @@ server {
 client {
   enabled = {{ nomad_client_enabled | lower }}
   network_interface = "{{ nomad_network_interface }}"
+  # A Tailscale interface carries an IPv4 /32, a ULA IPv6 and a link-local
+  # IPv6. Without this, Nomad picks between them per allocation; the ones that
+  # drew fe80:: registered services Consul could never health-check, because an
+  # HTTP check against a link-local address has no zone index.
+  preferred_address_family = "ipv4"
 }
 
 plugin "docker" {

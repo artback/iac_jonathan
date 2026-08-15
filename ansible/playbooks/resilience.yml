@@ -1,0 +1,20 @@
+---
+# Boot-order resilience, address pinning and alerting for the live cluster.
+#
+# Kept separate from site.yml on purpose. site.yml runs the consul and nomad
+# roles, which reinstall the versions this cluster was bootstrapped with and
+# would downgrade the running agents. This playbook touches neither.
+#
+#   ansible-playbook -i inventory.ini playbooks/resilience.yml
+#
+# To set the alert bot credentials at the same time:
+#
+#   ansible-playbook -i inventory.ini playbooks/resilience.yml \
+#     -e resilience_telegram_token=123456:ABC... \
+#     -e resilience_telegram_chat_id=485643205
+#
+- name: Harden the Consul/Nomad control plane against boot races
+  hosts: servers
+  become: true
+  roles:
+    - resilience

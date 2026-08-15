@@ -1,0 +1,14 @@
+# Managed by ansible (roles/resilience). Do not edit by hand.
+
+[Unit]
+Description=Run the homelab health probe every {{ resilience_watchdog_interval }}
+
+[Timer]
+# Run shortly after boot as well: a boot-time failure is exactly the case this
+# exists to catch, and it gives the control plane a moment to settle first.
+OnBootSec=3min
+OnUnitActiveSec={{ resilience_watchdog_interval }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

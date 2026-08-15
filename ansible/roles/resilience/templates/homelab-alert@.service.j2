@@ -1,0 +1,12 @@
+# Managed by ansible (roles/resilience). Do not edit by hand.
+#
+# Instantiated as homelab-alert@<unit>.service from an OnFailure= line, so a
+# unit dropping into the failed state pushes a Telegram message immediately.
+# The watchdog timer is the broader safety net; this is the fast path.
+
+[Unit]
+Description=Telegram alert for failed unit %i
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/homelab-alert "🚨 <b>%i</b> entered a failed state on %H"
