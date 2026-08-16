@@ -14,9 +14,19 @@
 -- keep their shipped defaults; only the Miniflux entry is edited. Do the same
 -- when rebuilding this rather than hand-writing a minimal file.
 --
--- base_url is the Tailscale Serve URL, which is also miniflux's own BASE_URL, so
--- it is correct over the tailnet and would stay correct behind Tailscale Funnel.
--- Reaching it requires the Kindle to be on the tailnet — see README.md.
+-- base_url is the Pi's tailnet IP over plain HTTP, deliberately, not the
+-- Tailscale Serve HTTPS URL. Two reasons, both learned the hard way:
+--
+--   1. raspberrypi.tailb9a8bb.ts.net is a MagicDNS-only name — it resolves from
+--      no public resolver. The Kindle cannot use MagicDNS because tailscaled
+--      fails to rewrite /etc/resolv.conf there ("/etc" is read-only), so the
+--      hostname never resolves and every request dies in getaddrinfo.
+--   2. An IP cannot be used with the Serve endpoint either: the cert is issued
+--      for the hostname, so TLS fails on SNI/CN.
+--
+-- Plain HTTP is not a downgrade here: the whole path runs inside WireGuard,
+-- which already encrypts and authenticates it. TLS would be belt-and-braces.
+-- The trade is that this only works while the Kindle is on the tailnet.
 
 return {
     accounts = {
@@ -25,7 +35,7 @@ return {
             type = "miniflux",
             active = true,
             auth = {
-                base_url = "https://raspberrypi.tailb9a8bb.ts.net:10000",
+                base_url = "http://100.116.81.88:8081",
                 -- Miniflux → Settings → API Keys. The installed key is named
                 -- "kindle-koreader" so a lost Kindle is one key revocation
                 -- rather than an account password change.
