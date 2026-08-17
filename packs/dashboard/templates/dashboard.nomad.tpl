@@ -70,14 +70,14 @@ server {
     location = /api/miniflux/entries {
         limit_except GET { deny all; }
         proxy_pass [[ var "miniflux_upstream" . ]]/v1/entries;
-        proxy_set_header X-Auth-Token "{{ with nomadVar "nomad/jobs/dashboard" }}{{ .miniflux_api_key }}{{ end }}";
+        proxy_set_header X-Auth-Token "{{ with nomadVar "nomad/jobs/Dashboard" }}{{ .miniflux_api_key }}{{ end }}";
     }
 
     # mark entries read/unread (the only write the dashboard may perform)
     location = /api/miniflux/entries-status {
         limit_except PUT { deny all; }
         proxy_pass [[ var "miniflux_upstream" . ]]/v1/entries;
-        proxy_set_header X-Auth-Token "{{ with nomadVar "nomad/jobs/dashboard" }}{{ .miniflux_api_key }}{{ end }}";
+        proxy_set_header X-Auth-Token "{{ with nomadVar "nomad/jobs/Dashboard" }}{{ .miniflux_api_key }}{{ end }}";
     }
 
     # consul service health (mTLS upstream, read-only)
