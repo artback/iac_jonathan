@@ -33,3 +33,12 @@ resilience_watchdog_interval: "5min"
 # so the watchdog can be installed before the bot exists.
 resilience_telegram_token: ""
 resilience_telegram_chat_id: ""
+
+# Nightly pg_dumpall output. Checked for freshness because this silently
+# stopped for seven days during the 2026-08-13 Consul outage.
+resilience_backup_dir: "/home/dwight/backups/postgres"
+# 30h, not 24h: the job runs at 05:00, so a 24h threshold would false-alarm
+# every morning before it fires.
+resilience_backup_max_age_hours: 30
+resilience_backup_min_bytes: 100000
+

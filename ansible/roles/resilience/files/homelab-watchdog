@@ -58,7 +58,29 @@ if [ -n "$leader" ] && [ "$leader" != '""' ]; then
 	done
 fi
 
-# 4. End-to-end probe of the public entry point.
+# 4. Backup freshness. Between 2026-08-09 and 2026-08-15 the nightly pg_dumpall
+#    did not run at all — Consul was down, so Nomad could not place the periodic
+#    job — and nothing said so. That is the same silent-failure shape as the
+#    outage itself, and it matters more here: this cluster has already lost a
+#    database once, in June 2026, with no usable dump.
+if [ -n "$BACKUP_DIR" ]; then
+	newest=$(ls -t "$BACKUP_DIR"/*.sql.gz 2>/dev/null | head -1)
+	if [ -z "$newest" ]; then
+		note "no database backups found in $BACKUP_DIR"
+	else
+		age_h=$(( ( $(date +%s) - $(stat -c %Y "$newest") ) / 3600 ))
+		size=$(stat -c %s "$newest")
+		if [ "$age_h" -gt "${BACKUP_MAX_AGE_HOURS:-30}" ]; then
+			note "newest database backup is ${age_h}h old ($(basename "$newest"))"
+		fi
+		# A dump that exists but is tiny is worse than none, because it looks fine.
+		if [ "$size" -lt "${BACKUP_MIN_BYTES:-100000}" ]; then
+			note "newest database backup is only ${size} bytes — suspiciously small"
+		fi
+	fi
+fi
+
+# 5. End-to-end probe of the public entry point.
 if [ -n "$PROBE_URL" ]; then
 	code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$PROBE_URL" 2>/dev/null || echo 000)
 	case "$code" in
