@@ -29,34 +29,45 @@
     group: root
     mode: "0644"
 
+# `enabled = false` occurs exactly once in this file — the acl block. The
+# server/client blocks use `enabled = true`, so no after/before scoping is
+# needed, and scoping it was in fact the bug: inside the subsection that
+# after/before extracts, `^` no longer anchors per line, so the regexp never
+# matched and the play reported changed=0 while doing nothing.
 - name: Enable ACLs in the live Nomad config
-  ansible.builtin.replace:
+  ansible.builtin.lineinfile:
     path: /etc/nomad.d/nomad.hcl
-    after: '^acl \{'
-    before: '^\}'
-    regexp: '^\s*enabled\s*=\s*false'
-    replace: '  enabled    = true'
+    regexp: '^\s*enabled\s*=\s*false\s*$'
+    line: '  enabled    = true'
+    backrefs: false
   notify: Restart Nomad agent
 
 - name: Apply the restart before bootstrapping
   ansible.builtin.meta: flush_handlers
 
-- name: Wait for the Nomad API to answer again
-  ansible.builtin.uri:
-    url: "https://{{ resilience_bind_address }}:4646/v1/agent/health"
-    validate_certs: false
-    status_code: [200, 403]
-  register: nomad_health
-  until: nomad_health.status in [200, 403]
-  retries: 12
-  delay: 5
+# Deliberately a port check, not an HTTP one. This cluster runs Nomad with
+# verify_https_client = true, so every API request needs a *client*
+# certificate; `validate_certs: false` only relaxes server verification and
+# leaves the handshake failing with TLSV13_ALERT_CERTIFICATE_REQUIRED whether
+# or not ACLs are on. Waiting on the listener proves the restart succeeded
+# without dragging mTLS material into the play.
+- name: Wait for Nomad to listen again after the restart
+  ansible.builtin.wait_for:
+    host: "{{ resilience_bind_address }}"
+    port: 4646
+    state: started
+    timeout: 120
 
-# A 403 here is the success signal: the API is up and now refusing
-# unauthenticated reads, which is the whole point.
+- name: Confirm the agent is actually up
+  ansible.builtin.systemd:
+    name: nomad
+  register: nomad_unit
+  failed_when: nomad_unit.status.ActiveState != "active"
+
 - name: Report that ACLs are live
   ansible.builtin.debug:
     msg: >-
-      Nomad ACLs are enabled (health endpoint returned
-      {{ nomad_health.status }}). Bootstrap next, on the operator's machine:
-      `nomad acl bootstrap`. Store the SecretID immediately — it cannot be
-      retrieved again, and without it the cluster cannot be administered.
+      Nomad ACLs are enabled and the agent is listening. Bootstrap next, from a
+      machine holding the client certificate: `nomad acl bootstrap`. Store the
+      SecretID immediately — it cannot be retrieved again, and without it the
+      cluster cannot be administered.
