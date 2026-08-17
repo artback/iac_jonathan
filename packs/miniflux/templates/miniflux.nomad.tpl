@@ -99,6 +99,19 @@ job "miniflux" {
           CLEANUP_ARCHIVE_READ_DAYS="[[ var "cleanup_archive_read_days" . ]]"
           CLEANUP_ARCHIVE_UNREAD_DAYS="[[ var "cleanup_archive_unread_days" . ]]"
           CLEANUP_FREQUENCY_HOURS="[[ var "cleanup_frequency_hours" . ]]"
+          # Prometheus already scrapes this cluster; without the collector a
+          # feed can rot silently for weeks, which is the failure shape that
+          # cost two days on the Consul side.
+          METRICS_COLLECTOR="[[ var "metrics_collector" . ]]"
+          METRICS_ALLOWED_NETWORKS="[[ var "metrics_allowed_networks" . ]]"
+          # Poll busy feeds more often and quiet ones less, instead of one flat
+          # interval for everything.
+          POLLING_SCHEDULER="[[ var "polling_scheduler" . ]]"
+          SCHEDULER_ENTRY_FREQUENCY_MIN_INTERVAL="[[ var "scheduler_min_interval" . ]]"
+          SCHEDULER_ENTRY_FREQUENCY_MAX_INTERVAL="[[ var "scheduler_max_interval" . ]]"
+          # Images are stripped per-feed by a remove(img) rewrite rule, so there
+          # is nothing left to proxy.
+          MEDIA_PROXY_MODE="[[ var "media_proxy_mode" . ]]"
         EOH
       }
 

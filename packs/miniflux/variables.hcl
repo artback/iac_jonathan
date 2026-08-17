@@ -41,9 +41,9 @@ variable "db_name" {
 }
 
 variable "service_tags" {
-  description = "The tags for the miniflux service."
+  description = "Consul tags. \"metrics\" opts this service into the prometheus pack's consul-services scrape job, which keeps only services carrying that tag."
   type        = list(string)
-  default     = ["miniflux"]
+  default     = ["miniflux", "metrics"]
 }
 
 variable "cleanup_archive_read_days" {
@@ -63,3 +63,40 @@ variable "cleanup_frequency_hours" {
   type        = number
   default     = 24
 }
+
+variable "metrics_collector" {
+  description = "Expose Prometheus metrics at /metrics."
+  type        = string
+  default     = "1"
+}
+
+variable "metrics_allowed_networks" {
+  description = "CIDRs permitted to scrape /metrics: the Nomad bridge (where Prometheus runs) and the tailnet. Not the LAN."
+  type        = string
+  default     = "127.0.0.1/32,172.26.64.0/20,100.64.0.0/10"
+}
+
+variable "polling_scheduler" {
+  description = "entry_frequency adapts the poll interval to how often a feed actually publishes."
+  type        = string
+  default     = "entry_frequency"
+}
+
+variable "scheduler_min_interval" {
+  description = "Floor for adaptive polling, minutes."
+  type        = number
+  default     = 15
+}
+
+variable "scheduler_max_interval" {
+  description = "Ceiling for adaptive polling, minutes."
+  type        = number
+  default     = 1440
+}
+
+variable "media_proxy_mode" {
+  description = "none/http-only/all. Images are stripped at fetch time, so nothing needs proxying."
+  type        = string
+  default     = "none"
+}
+
