@@ -93,6 +93,12 @@ job "miniflux" {
           ADMIN_PASSWORD="{{ with nomadVar "nomad/jobs/miniflux" }}{{ .admin_password }}{{ end }}"
           BASE_URL="[[ var "base_url" . ]]"
           TZ="Europe/Stockholm"
+          # Retention. Miniflux's defaults (60d read / 180d unread) never fired
+          # on this instance — 20 entries sat past the threshold with nothing
+          # archived — so these are set explicitly rather than relied upon.
+          CLEANUP_ARCHIVE_READ_DAYS="[[ var "cleanup_archive_read_days" . ]]"
+          CLEANUP_ARCHIVE_UNREAD_DAYS="[[ var "cleanup_archive_unread_days" . ]]"
+          CLEANUP_FREQUENCY_HOURS="[[ var "cleanup_frequency_hours" . ]]"
         EOH
       }
 

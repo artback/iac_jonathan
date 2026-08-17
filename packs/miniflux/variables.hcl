@@ -45,3 +45,21 @@ variable "service_tags" {
   type        = list(string)
   default     = ["miniflux"]
 }
+
+variable "cleanup_archive_read_days" {
+  description = "Archive read entries older than this many days."
+  type        = number
+  default     = 10
+}
+
+variable "cleanup_archive_unread_days" {
+  description = "Archive unread entries older than this many days. Checked against the backlog before changing: most unread items here are under a month old."
+  type        = number
+  default     = 30
+}
+
+variable "cleanup_frequency_hours" {
+  description = "How often the cleanup sweep runs."
+  type        = number
+  default     = 24
+}
