@@ -64,7 +64,7 @@ def tg(method, payload):
 # Browsing happens in the shared group, so search results land silently and
 # tidy themselves up once a choice is made. Everything stays in one thread —
 # splitting it across a DM was more confusing than the noise it saved.
-CARDS = {}   # chat -> message ids from the most recent search
+CARDS = {}   # chat -> result-card message ids still awaiting a choice
 
 def say(chat, text, keyboard=None, silent=False):
     p = {"chat_id": chat, "text": text, "disable_notification": silent}
@@ -113,7 +113,6 @@ def search(chat, which, term):
     if not results:
         say(chat, "No " + a["kind"] + " found for '" + term + "'.", silent=True)
         return
-    forget_cards(chat)          # a new search supersedes the last one
     ids = CARDS.setdefault(str(chat), [])
     shown = 0
     for r in results:
