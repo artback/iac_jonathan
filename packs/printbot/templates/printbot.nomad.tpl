@@ -57,6 +57,79 @@ import json, os, re, secrets as pysecrets, subprocess, tempfile, threading, time
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 API = "https://api.telegram.org/bot" + TOKEN
+
+# --- BEGIN SHARED UI (managed by scripts/sync-bot-ui.sh) ---
+OK, WARN, BAD = "✅", "⚠️", "❌"
+
+
+def tg(method, payload):
+    """Call the Telegram Bot API. Never raises: a bot that dies on a transient
+    API blip is worse than one that logs and carries on."""
+    import json, urllib.request
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request("https://api.telegram.org/bot" + TOKEN + "/" + method,
+                                 data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.load(r)
+    except Exception as e:
+        print("tg " + method + " failed: " + str(e)[:120], flush=True)
+        return {}
+
+
+def esc(t):
+    return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def bar(pct, width=10):
+    """A ten-cell meter reads faster than a number on a phone screen."""
+    pct = max(0.0, min(100.0, float(pct)))
+    filled = int(round(pct / 100 * width))
+    return "█" * filled + "░" * (width - filled)
+
+
+def dot(pct, warn=75, bad=90):
+    return OK if pct < warn else (WARN if pct < bad else BAD)
+
+
+def ago(seconds):
+    if seconds < 90:
+        return str(int(seconds)) + "s ago"
+    if seconds < 5400:
+        return str(int(seconds // 60)) + "m ago"
+    if seconds < 172800:
+        return str(int(seconds // 3600)) + "h ago"
+    return str(int(seconds // 86400)) + "d ago"
+
+
+def human(n):
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024:
+            return str(round(n, 1)) + unit
+        n /= 1024
+    return str(round(n, 1)) + "PB"
+
+
+def kb(rows):
+    return {"inline_keyboard": rows}
+
+
+def back_row(target="menu"):
+    return [ {"text": "← Menu", "callback_data": target} ]
+
+
+def card(chat, text, markup, message_id=None):
+    """Edit in place when we can. One tidy card beats a wall of near-identical
+    replies scrolling up the chat, which is the whole point on a phone."""
+    payload = {"chat_id": chat, "text": text, "parse_mode": "HTML",
+               "disable_web_page_preview": True, "reply_markup": markup}
+    if message_id:
+        payload["message_id"] = message_id
+        return tg("editMessageText", payload)
+    return tg("sendMessage", payload)
+# --- END SHARED UI ---
+
 BASE_ALLOWED = {s.strip() for s in os.environ.get("ALLOWED_CHAT_IDS", "").split(",") if s.strip()}
 STATE_FILE = "/data/members.json"
 STATE_LOCK = threading.Lock()
@@ -180,6 +253,68 @@ def watch_job_inner(chat, job, name):
     say(chat, "After 12 hours, Sabre has decided " + name
              + " is now Dunder Mifflin's problem. Check /status.")
 
+
+def pb_menu_rows():
+    row1 = [ {"text": "\U0001f5a8 Status", "callback_data": "pb:status"},
+             {"text": "\U0001f58b Ink",    "callback_data": "pb:ink"} ]
+    row2 = [ {"text": "\U0001f9f9 Clear queue", "callback_data": "pb:clear"},
+             {"text": "\U0001f504 Refresh",     "callback_data": "pb:status"} ]
+    return [ row1, row2 ]
+
+
+def pb_view_status():
+    try:
+        q = queue_status()
+    except Exception as e:
+        return WARN + " couldn't reach the queue: " + esc(str(e)[:60]), kb(pb_menu_rows())
+    idle = "idle" in q.lower() or "empty" in q.lower()
+    head = (OK if idle else WARN) + " <b>Sabre Quality Assurance</b>"
+    return head + "\n\n<pre>" + esc(q[:1500]) + "</pre>", kb(pb_menu_rows())
+
+
+def pb_view_ink():
+    import urllib.request, json as _json, time as _time, datetime as _dt
+    try:
+        with urllib.request.urlopen(INK_URL, timeout=15) as r:
+            d = _json.load(r)
+    except Exception as e:
+        return WARN + " ink check failed: " + esc(str(e)[:60]), kb(pb_menu_rows())
+    lines = [ "\U0001f58b <b>Sabre Ink Audit</b>", "" ]
+    for sup in d.get("supplies", []):
+        pct = int(sup.get("percent", 0))
+        # low ink is the failure here, so the traffic light is inverted
+        mark = OK if pct > 30 else (WARN if pct > 10 else BAD)
+        lines.append("<code>" + esc(sup.get("name", "?")[:18]).ljust(18) + " " +
+                     bar(pct) + " " + str(pct).rjust(3) + "%</code> " + mark)
+    upd = d.get("updated", "")
+    stale = ""
+    try:
+        t = _dt.datetime.fromisoformat(upd)
+        age = _time.time() - t.timestamp()
+        stale = ago(age)
+        if age > 7 * 86400:
+            stale = stale + " " + WARN
+    except Exception:
+        stale = esc(upd or "unknown")
+    lines.append("")
+    lines.append("<i>reading " + stale + "</i>")
+    return "\n".join(lines), kb(pb_menu_rows())
+
+
+def pb_render(action):
+    if action == "pb:ink":
+        return pb_view_ink()
+    if action == "pb:clear":
+        try:
+            subprocess.run(["cancel", "-h", CUPS, "-a", PRINTER], timeout=15)
+            note = OK + " queue cleared. A Sabre product never forgets, but it does forgive."
+        except Exception as e:
+            note = WARN + " " + esc(str(e)[:60])
+        t, k = pb_view_status()
+        return note + "\n\n" + t, k
+    return pb_view_status()
+
+
 def handle(msg):
     chat = str(msg["chat"]["id"])
     text = msg.get("text", "")
@@ -274,11 +409,13 @@ def handle(msg):
                  + "document face-down, this takes ~30s)")
         threading.Thread(target=do_scan, args=(chat, want_pdf), daemon=True).start()
         return
+    if text.startswith("/menu"):
+        t, k = pb_view_status()
+        card(chat, t, k)
+        return
     if text.startswith("/status"):
-        try:
-            say(chat, "📋 Sabre Quality Assurance Report:\n" + queue_status())
-        except Exception as e:
-            say(chat, "Couldn't reach the print queue: " + str(e))
+        t, k = pb_view_status()
+        card(chat, t, k)
         return
     if text.startswith("/clear"):
         try:
@@ -313,18 +450,8 @@ def handle(msg):
                  else "Couldn't cancel " + j + ": " + r.stderr.strip())
         return
     if text.startswith("/ink"):
-        try:
-            with urllib.request.urlopen(INK_URL, timeout=15) as r:
-                d = json.load(r)
-            bars = []
-            for s in d.get("supplies", []):
-                pct = s["percent"]
-                bar = "▓" * (pct // 10) + "░" * (10 - pct // 10)
-                bars.append(s["name"] + "\n" + bar + " " + str(pct) + "%  (" + s["health"] + ")")
-            say(chat, "🖋 Sabre Ink Audit (as of " + d.get("updated", "?") + "):\n\n"
-                     + "\n\n".join(bars))
-        except Exception as e:
-            say(chat, "Ink check failed: " + str(e))
+        t, k = pb_view_ink()
+        card(chat, t, k)
         return
     if text.startswith("/start") or (text and not msg.get("document") and not msg.get("photo")):
         say(chat, "Welcome to Sabre Printing Solutions. It's pronounced 'SAH-bray.'\n\n"
@@ -475,6 +602,18 @@ def main():
             updates = api("getUpdates", offset=offset, timeout=50)
             for u in updates.get("result", []):
                 offset = u["update_id"] + 1
+                if "callback_query" in u:
+                    cq = u["callback_query"]
+                    chat = str(cq["message"]["chat"]["id"])
+                    if not is_allowed(chat):
+                        continue
+                    tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
+                    try:
+                        t, k = pb_render(cq.get("data", "pb:status"))
+                    except Exception as e:
+                        t, k = WARN + " " + esc(str(e)[:150]), kb(pb_menu_rows())
+                    card(chat, t, k, cq["message"]["message_id"])
+                    continue
                 if "message" in u:
                     handle(u["message"])
         except Exception as e:
