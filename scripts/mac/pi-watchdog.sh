@@ -32,12 +32,28 @@ curl -sf -m 8 -o /dev/null https://api.telegram.org || exit 0   # no usable upli
 # Two independent signals, because either alone lies. A tailnet ping can fail
 # on a NAT hiccup while the host is fine; a TCP connect can fail while Nomad
 # restarts. Only both failing is treated as "gone".
+# Retried, not sampled once. This Mac is powered off and woken many times a
+# day, and for the first few seconds after a wake Tailscale reports itself up
+# while the tunnel is still being re-established -- a single probe there would
+# report the Pi missing every single morning. Three failures spread over ~60s
+# is the difference between "settling" and "gone". The healthy path is
+# unaffected: it returns on the first probe and never sleeps.
+probe() {
+	"$TS" ping -c 1 --timeout 5s "$PI" >/dev/null 2>&1 && return 0
+	nc -z -G 5 "$PI" 4646 >/dev/null 2>&1 && return 0
+	return 1
+}
+
 reachable=no
-if "$TS" ping -c 1 --timeout 5s "$PI" >/dev/null 2>&1; then
-	reachable=yes
-elif nc -z -G 5 "$PI" 4646 >/dev/null 2>&1; then
-	reachable=yes
-fi
+attempt=1
+while [ "$attempt" -le 3 ]; do
+	if probe; then
+		reachable=yes
+		break
+	fi
+	[ "$attempt" -lt 3 ] && sleep 15
+	attempt=$((attempt + 1))
+done
 
 previous=""
 [ -r "$STATE" ] && previous=$(cat "$STATE")

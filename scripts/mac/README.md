@@ -25,6 +25,12 @@ Two design points worth keeping:
   cries wolf on every flight and every cafe wifi teaches you to ignore the real
   alarm. Both Tailscale being up locally *and* a reachable uplink are required
   before absence means anything.
+- **Failures are retried, not sampled once.** This Mac is powered off and woken
+  many times a day, and for a few seconds after a wake Tailscale reports itself
+  up while the tunnel is still re-establishing. A single probe there would
+  report the Pi missing every morning. Three failures over ~60s separate
+  "settling" from "gone"; the healthy path returns on the first probe and never
+  sleeps.
 - **Two independent reachability signals.** A tailnet ping can fail on a NAT
   hiccup while the host is fine; a TCP connect to 4646 can fail while Nomad
   restarts. Only both failing counts as gone.
