@@ -184,7 +184,8 @@ def search(chat, which, term):
     else:
         results = arr_get(a, "/series/lookup?term=" + urllib.parse.quote(term))
     if not results:
-        say(chat, "No " + a["kind"] + " found for '" + term + "'.", silent=True)
+        card(chat, WARN + " No " + a["kind"] + " found for <b>" + esc(term) + "</b>.",
+             kb(mb_menu_rows()))
         return
     ids = CARDS.setdefault(str(chat), [])
     shown = 0
@@ -242,43 +243,102 @@ def add(chat, which, ext_id, monitor=None, who=""):
                   "future": " (future episodes)"}.get(monitor or "all", "")
     title = added.get("title", "?") + " (" + str(added.get("year", "?")) + ")"
     forget_cards(chat)          # the choice is made; clear the browsing clutter
-    say(chat, a["icon"] + " Added: " + title + detail
-             + " — searching for releases now.")
+    card(chat, OK + " " + a["icon"] + " <b>" + esc(title) + "</b>" + esc(detail)
+               + "\n<i>Searching for releases now.</i>",
+         kb(mb_menu_rows()))
     for c in ALLOWED - {chat}:
-        say(c, a["icon"] + " " + (who or "Someone") + " added " + title + detail)
+        card(c, a["icon"] + " " + esc(who or "Someone") + " added <b>"
+                + esc(title) + "</b>" + esc(detail), kb(mb_menu_rows()))
 
-def queue_report(chat):
-    out = []
+def mb_view_queue():
+    """Progress as a meter, so "nearly done" and "just started" are one glance
+    apart. Sorted by progress: the ones about to land are the ones you care
+    about."""
+    rows = []
     for which in ("m", "s"):
         a = ARR[which]
         try:
-            q = arr_get(a, "/queue?pageSize=10")
-            for rec in q.get("records", []):
-                title = rec.get("title", "?")[:60]
+            for rec in arr_get(a, "/queue?pageSize=10").get("records", []):
                 left = rec.get("sizeleft", 0)
                 size = rec.get("size", 1) or 1
-                pct = int(100 * (1 - left / size))
-                out.append(a["icon"] + " " + title + " — " + str(pct) + "%")
+                pct = 100.0 * (1 - left / size)
+                rows.append((pct, a["icon"], rec.get("title", "?"), left, rec))
         except Exception as e:
-            out.append(a["icon"] + " queue unavailable: " + str(e))
-    say(chat, "⬇️ Download queue:\n" + ("\n".join(out) if out else "empty — all quiet"))
+            rows.append((-1.0, a["icon"], "queue unavailable: " + str(e)[:50], 0, None))
 
-def upcoming(chat):
+    lines = ["\U0001f4e5 <b>Download queue</b>", ""]
+    if not rows:
+        lines.append("<i>empty — all quiet</i>")
+        return "\n".join(lines), kb(mb_menu_rows())
+
+    rows.sort(key=lambda r: -r[0])
+    for pct, icon, title, left, rec in rows:
+        if pct < 0:
+            lines.append(WARN + " " + icon + " " + esc(title))
+            continue
+        # Release names are long and noisy; the title is the first thing you
+        # read, so give it the width and drop the scene tags off the end.
+        lines.append(icon + " <b>" + esc(clean_release(title)) + "</b>")
+        eta = rec.get("timeleft") if rec else None
+        tail = "  <i>" + esc(eta) + "</i>" if eta else ""
+        lines.append("<code>" + bar(pct) + " " + str(int(pct)).rjust(3) + "%</code>" + tail)
+    return "\n".join(lines), kb(mb_menu_rows())
+
+
+def clean_release(title):
+    """Trim a scene release name down to something readable on a phone."""
+    t = re.split(r"\b(?:1080p|720p|2160p|480p|BluRay|WEB-?DL|WEBRip|HDTV|REPACK)\b",
+                 title, 1)[0]
+    t = re.sub(r"^\[" r"[^\]]*\]\s*", "", t).replace(".", " ").strip(" -_")
+    return (t or title)[:48]
+
+
+def mb_view_upcoming():
     out = []
     today = time.strftime("%Y-%m-%d")
     end = time.strftime("%Y-%m-%d", time.localtime(time.time() + 7 * 86400))
     for which in ("m", "s"):
         a = ARR[which]
         try:
-            cal = arr_get(a, "/calendar?start=" + today + "&end=" + end)
-            for rec in cal[:10]:
+            for rec in arr_get(a, "/calendar?start=" + today + "&end=" + end)[:10]:
                 t = rec.get("title", "?")
                 if which == "s":
-                    t += " S" + str(rec.get("seasonNumber", 0)).zfill(2) + "E" + str(rec.get("episodeNumber", 0)).zfill(2)
-                out.append(a["icon"] + " " + t + " — " + str(rec.get("airDate") or rec.get("inCinemas", ""))[:10])
+                    t += " S" + str(rec.get("seasonNumber", 0)).zfill(2) + \
+                         "E" + str(rec.get("episodeNumber", 0)).zfill(2)
+                when = str(rec.get("airDate") or rec.get("inCinemas", ""))[:10]
+                out.append((when, a["icon"], t))
         except Exception as e:
-            out.append(a["icon"] + " calendar unavailable: " + str(e))
-    say(chat, "🗓 Next 7 days:\n" + ("\n".join(out) if out else "nothing scheduled"))
+            out.append(("", a["icon"], "calendar unavailable: " + str(e)[:50]))
+
+    lines = ["\U0001f4c5 <b>Next 7 days</b>", ""]
+    if not out:
+        lines.append("<i>nothing scheduled</i>")
+        return "\n".join(lines), kb(mb_menu_rows())
+
+    out.sort(key=lambda r: r[0])
+    last = None
+    for when, icon, title in out:
+        if when != last:                      # one date header, not a date per row
+            lines.append("")
+            lines.append("<b>" + esc(day_label(when)) + "</b>")
+            last = when
+        lines.append("  " + icon + " " + esc(title[:52]))
+    return "\n".join(lines), kb(mb_menu_rows())
+
+
+def day_label(d):
+    """Today/Tomorrow read faster than a date you have to decode."""
+    if not d:
+        return "unscheduled"
+    try:
+        t = time.mktime(time.strptime(d, "%Y-%m-%d"))
+    except Exception:
+        return d
+    days = int((t - time.mktime(time.strptime(time.strftime("%Y-%m-%d"),
+                                              "%Y-%m-%d"))) // 86400)
+    return {0: "Today", 1: "Tomorrow"}.get(days, time.strftime("%a %d %b",
+                                                               time.localtime(t)))
+
 
 def slug_to_term(slug):
     # trakt/letterboxd slugs: "dune-part-two-2024" -> "dune part two 2024"
@@ -301,8 +361,9 @@ def resolve_link(chat, text):
                 return True
         except Exception:
             pass
-        say(chat, "Found IMDb id " + imdb + " but neither Radarr nor Sonarr "
-                 + "recognize it — is it a short/episode link?")
+        card(chat, WARN + " Found IMDb id " + esc(imdb) + " but neither Radarr nor Sonarr "
+                 + "recognize it — is it a short/episode link?",
+             kb(mb_menu_rows()))
         return True
     m = re.search(r"themoviedb\.org/(movie|tv)/(\d+)(?:-([\w-]+))?", text)
     if m:
@@ -328,7 +389,7 @@ def mb_menu_rows():
     row1 = [ {"text": "\U0001f4e5 Queue",    "callback_data": "mb:queue"},
              {"text": "\U0001f4c5 Upcoming", "callback_data": "mb:upcoming"} ]
     row2 = [ {"text": "\U0001f4be Disk",     "callback_data": "mb:disk"},
-             {"text": "\U0001f504 Refresh",  "callback_data": "mb:disk"} ]
+             {"text": "\U0001f3e0 Home",     "callback_data": "mb:menu"} ]
     return [ row1, row2 ]
 
 
@@ -374,21 +435,24 @@ def handle_message(msg):
                        "Send a title, or paste an IMDb / TMDb link.",
                  kb(mb_menu_rows()))
         elif text.startswith("/queue"):
-            queue_report(chat)
+            t, k = mb_view_queue()
+            card(chat, t, k)
         elif text.startswith("/disk"):
             t, k = mb_view_disk()
             card(chat, t, k)
         elif text.startswith("/upcoming"):
-            upcoming(chat)
+            t, k = mb_view_upcoming()
+            card(chat, t, k)
         elif text.startswith("/"):
-            say(chat, "🎬 Artback Video Club:\n\n"
-                     + "/movie TITLE — search & add to Radarr\n"
-                     + "/series TITLE — search & add to Sonarr\n"
-                     + "/queue — current downloads\n"
-                     + "/upcoming — next 7 days\n"
-                     + "/disk — seedbox storage\n\n"
-                     + "Or just send a title — or paste an IMDb / TMDb / "
-                     + "Trakt / Letterboxd link and I'll decode it.")
+            card(chat, "\U0001f3ac <b>Artback Video Club</b>\n\n"
+                       "<b>/movie</b> TITLE — search &amp; add to Radarr\n"
+                       "<b>/series</b> TITLE — search &amp; add to Sonarr\n"
+                       "<b>/queue</b> — current downloads\n"
+                       "<b>/upcoming</b> — next 7 days\n"
+                       "<b>/disk</b> — seedbox storage\n\n"
+                       "<i>Or just send a title, or paste an IMDb / TMDb / "
+                       "Trakt / Letterboxd link and I'll decode it.</i>",
+                 kb(mb_menu_rows()))
         elif resolve_link(chat, text):
             pass
         else:
@@ -396,7 +460,8 @@ def handle_message(msg):
             search(chat, "m", text)
             search(chat, "s", text)
     except Exception as e:
-        say(chat, "That didn't work: " + str(e))
+        card(chat, BAD + " That didn't work\n<code>" + esc(str(e)[:180]) + "</code>",
+             kb(mb_menu_rows()))
 
 def handle_callback(cb):
     chat = str(cb["message"]["chat"]["id"])
@@ -414,9 +479,15 @@ def handle_callback(cb):
                 t, k = mb_view_disk()
                 card(chat, t, k, mid)
             elif data == "mb:queue":
-                queue_report(chat)
+                t, k = mb_view_queue()
+                card(chat, t, k, mid)
             elif data == "mb:upcoming":
-                upcoming(chat)
+                t, k = mb_view_upcoming()
+                card(chat, t, k, mid)
+            elif data == "mb:menu":
+                card(chat, "\U0001f3ac <b>Artback Video Club</b>\n\n"
+           "Send a title, or paste an IMDb / TMDb link.",
+                     kb(mb_menu_rows()), mid)
         except Exception as e:
             card(chat, WARN + " " + esc(str(e)[:150]), kb(mb_menu_rows()), mid)
         return
@@ -429,7 +500,8 @@ def handle_callback(cb):
             _, ext_id, monitor = data.split(":")
             add(chat, "s", ext_id, monitor=monitor, who=who)
     except Exception as e:
-        say(chat, "Add failed: " + str(e))
+        card(chat, BAD + " Add failed\n<code>" + esc(str(e)[:180]) + "</code>",
+             kb(mb_menu_rows()))
 
 def main():
     offset = 0

@@ -130,16 +130,6 @@ CW_PASS = os.environ["CALIBRE_PASSWORD"]
 SILENT = os.environ.get("SILENT", "true").lower() != "false"
 BOOK_EXT = (".epub", ".pdf", ".mobi", ".azw3", ".azw", ".cbz", ".cbr", ".fb2", ".txt")
 
-def say(text):
-    try:
-        req = urllib.request.Request(API + "/sendMessage",
-            data=json.dumps({"chat_id": CHAT, "text": text,
-                             "disable_notification": SILENT}).encode(),
-            headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=30).read()
-    except Exception as e:
-        print("say error:", e, flush=True)
-
 # ---------------------------------------------------------------- Calibre-Web
 
 class Calibre:
@@ -326,23 +316,40 @@ def safe_filename(title):
 
 URL_RE = re.compile(r"https?://[^\s<>\"']+")
 
+def progress(text, mid=None):
+    """One card that rewrites itself as the work advances. Sending a fresh
+    message per step left three near-identical lines in the chat for every
+    link — on a phone that is all you can see."""
+    r = card(CHAT, text, kb(lb_menu_rows()), mid)
+    if mid:
+        return mid
+    return ((r or {}).get("result") or {}).get("message_id")
+
+
 def handle_url(url):
-    say("Fetching " + url[:70] + " …")
+    mid = progress("\U0001f4e5 <b>Fetching</b>\n<code>" + esc(url[:70]) + "</code>")
     title, blocks, words = fetch_article(url)
     if words < 120:
-        say("That page had almost no readable text (" + str(words) + " words) — "
-            "probably a paywall or a JavaScript-rendered site. Nothing uploaded.")
+        progress(WARN + " <b>Almost no readable text</b> (" + str(words) + " words)\n"
+                 "<i>Probably a paywall or a JavaScript-rendered page. "
+                 "Nothing uploaded.</i>", mid)
         return
+    progress("\U0001f4d6 <b>" + esc(title[:70]) + "</b>\n"
+             "<i>" + str(words) + " words · building EPUB…</i>", mid)
     epub = build_epub(title, blocks, url)
     CAL.upload(epub, safe_filename(title))
-    say("Added: " + title[:80] + "\n" + str(words) + " words · now in Calibre-Web, "
-        "pull it from the OPDS catalogue on the Kindle.")
+    progress(OK + " <b>" + esc(title[:70]) + "</b>\n"
+             + str(words) + " words · <i>in Calibre-Web — pull it from the "
+             "OPDS catalogue on the Kindle.</i>", mid)
+
 
 def handle_file(doc):
     name = doc.get("file_name", "book")
     if not name.lower().endswith(BOOK_EXT):
-        say("I can take " + ", ".join(BOOK_EXT) + " — not " + name)
+        progress(WARN + " I can take <b>" + esc(", ".join(BOOK_EXT))
+                 + "</b> — not <code>" + esc(name) + "</code>")
         return
+    mid = progress("\U0001f4e5 <b>Filing</b>\n<code>" + esc(name) + "</code>")
     info = json.load(urllib.request.urlopen(
         API + "/getFile?file_id=" + urllib.parse.quote(doc["file_id"]), timeout=30))
     path = info["result"]["file_path"]
@@ -350,8 +357,8 @@ def handle_file(doc):
             "https://api.telegram.org/file/bot" + TOKEN + "/" + path, timeout=300) as r:
         data = r.read()
     CAL.upload(data, name)
-    say("Added: " + name + "\nIt is in Calibre-Web now — pull it from the OPDS "
-        "catalogue on the Kindle.")
+    progress(OK + " <b>" + esc(name) + "</b>\n<i>In Calibre-Web now — pull it "
+             "from the OPDS catalogue on the Kindle.</i>", mid)
 
 
 def lb_menu_rows():
@@ -397,13 +404,13 @@ def handle(msg):
         if m:
             handle_url(m.group(0))
             return
-        say("Send me a link and I will turn it into an EPUB, or send an ebook "
-            "file and I will file it. Either way it lands in Calibre-Web and "
-            "reaches the Kindle through the OPDS catalogue.")
+        t, k = lb_view_status()
+        card(CHAT, t, k)
     except Exception as e:
         # a stale session is the usual cause; drop it so the next try re-logs in
         CAL.opener = None
-        say("That failed: " + str(e)[:200])
+        card(CHAT, BAD + " That failed\n<code>" + esc(str(e)[:180]) + "</code>",
+             kb(lb_menu_rows()))
 
 def main():
     offset = 0
