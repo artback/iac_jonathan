@@ -9,10 +9,11 @@
 # un-ignore a file inside an ignored directory.
 vars/*
 !vars/*.example.hcl
+# ...and `vars` alone, so a symlink of that name (git worktrees) is ignored too.
+vars
 
 # Real inventory may contain a Tailscale auth key.
 ansible/inventory.ini
-
 /dashboard/
 
 # macOS finder junk

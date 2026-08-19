@@ -61,14 +61,28 @@ def tg(method, payload):
     with urllib.request.urlopen(req, timeout=70) as r:
         return json.load(r)
 
-def say(chat, text, keyboard=None):
-    p = {"chat_id": chat, "text": text}
+# Browsing happens in the shared group, so search results land silently and
+# tidy themselves up once a choice is made. Everything stays in one thread —
+# splitting it across a DM was more confusing than the noise it saved.
+CARDS = {}   # chat -> result-card message ids still awaiting a choice
+
+def say(chat, text, keyboard=None, silent=False):
+    p = {"chat_id": chat, "text": text, "disable_notification": silent}
     if keyboard:
         p["reply_markup"] = {"inline_keyboard": keyboard}
     try:
-        tg("sendMessage", p)
+        return tg("sendMessage", p).get("result", {}).get("message_id")
     except Exception as e:
         print("say error:", e, flush=True)
+        return None
+
+def forget_cards(chat):
+    """Remove the result cards once one has been chosen."""
+    for mid in CARDS.pop(str(chat), []):
+        try:
+            tg("deleteMessage", {"chat_id": chat, "message_id": mid})
+        except Exception:
+            pass   # older than 48h, or already gone
 
 def arr_get(a, path):
     req = urllib.request.Request(a["url"] + "/api/v3" + path,
@@ -83,11 +97,12 @@ def arr_post(a, path, payload):
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.load(r)
 
-def photo_card(chat, photo, caption, keyboard):
-    p = {"chat_id": chat, "photo": photo, "caption": caption}
+def photo_card(chat, photo, caption, keyboard, silent=True):
+    p = {"chat_id": chat, "photo": photo, "caption": caption,
+         "disable_notification": silent}
     if keyboard:
         p["reply_markup"] = {"inline_keyboard": keyboard}
-    tg("sendPhoto", p)
+    return tg("sendPhoto", p).get("result", {}).get("message_id")
 
 def search(chat, which, term):
     a = ARR[which]
@@ -96,8 +111,9 @@ def search(chat, which, term):
     else:
         results = arr_get(a, "/series/lookup?term=" + urllib.parse.quote(term))
     if not results:
-        say(chat, "No " + a["kind"] + " found for '" + term + "'.")
+        say(chat, "No " + a["kind"] + " found for '" + term + "'.", silent=True)
         return
+    ids = CARDS.setdefault(str(chat), [])
     shown = 0
     for r in results:
         if shown >= 3:
@@ -121,13 +137,16 @@ def search(chat, which, term):
                          [{"text": "➕ Latest season only", "callback_data": "adds:" + str(ext_id) + ":latestSeason"}],
                          [{"text": "➕ Future episodes only", "callback_data": "adds:" + str(ext_id) + ":future"}] ]
         poster = r.get("remotePoster")
+        mid = None
         try:
             if poster:
-                photo_card(chat, poster, caption, keyboard)
+                mid = photo_card(chat, poster, caption, keyboard)
             else:
                 raise ValueError("no poster")
         except Exception:
-            say(chat, caption, keyboard)
+            mid = say(chat, caption, keyboard, silent=True)
+        if mid:
+            ids.append(mid)
 
 def add(chat, which, ext_id, monitor=None, who=""):
     a = ARR[which]
@@ -149,6 +168,7 @@ def add(chat, which, ext_id, monitor=None, who=""):
         detail = {"all": " (all seasons)", "latestSeason": " (latest season)",
                   "future": " (future episodes)"}.get(monitor or "all", "")
     title = added.get("title", "?") + " (" + str(added.get("year", "?")) + ")"
+    forget_cards(chat)          # the choice is made; clear the browsing clutter
     say(chat, a["icon"] + " Added: " + title + detail
              + " — searching for releases now.")
     for c in ALLOWED - {chat}:
