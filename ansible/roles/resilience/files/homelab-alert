@@ -11,15 +11,15 @@
 # Managed by ansible (roles/resilience). Do not edit by hand.
 set -u
 
-ENV_FILE=${ENV_FILE:-/etc/homelab-alert.env}
+ALERT_ENV_FILE=${ALERT_ENV_FILE:-/etc/homelab-alert.env}
 
-if [ ! -r "$ENV_FILE" ]; then
-	echo "homelab-alert: $ENV_FILE is missing; dropping message: $*" >&2
+if [ ! -r "$ALERT_ENV_FILE" ]; then
+	echo "homelab-alert: $ALERT_ENV_FILE is missing; dropping message: $*" >&2
 	exit 0
 fi
 
 # shellcheck source=/dev/null
-. "$ENV_FILE"
+. "$ALERT_ENV_FILE"
 
 if [ -z "${TELEGRAM_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
 	echo "homelab-alert: bot not configured yet; dropping message: $*" >&2

@@ -14,14 +14,18 @@
 # Managed by ansible (roles/resilience). Do not edit by hand.
 set -u
 
-ENV_FILE=${ENV_FILE:-/etc/homelab-watchdog.env}
-[ -r "$ENV_FILE" ] && . "$ENV_FILE"
+# Deliberately not called ENV_FILE: this script execs homelab-alert, which
+# reads its own credentials file, and a shared name would be inherited by the
+# child -- pointing the alerter at a token-less file exactly when it is needed.
+WATCHDOG_ENV_FILE=${WATCHDOG_ENV_FILE:-/etc/homelab-watchdog.env}
+[ -r "$WATCHDOG_ENV_FILE" ] && . "$WATCHDOG_ENV_FILE"
 
 CONSUL_ADDR=${CONSUL_ADDR:-http://127.0.0.1:8500}
 WATCHED_UNITS=${WATCHED_UNITS:-consul nomad docker tailscaled}
 IGNORED_CHECK_SERVICES=${IGNORED_CHECK_SERVICES:-}
 PROBE_URL=${PROBE_URL:-}
 STATE_FILE=${STATE_FILE:-/var/lib/homelab-watchdog/state}
+HEARTBEAT_URL=${HEARTBEAT_URL:-}
 
 problems=""
 
@@ -108,6 +112,38 @@ if [ "$current" != "$previous" ]; then
 		/usr/local/sbin/homelab-alert "$message"
 	fi
 	printf '%s' "$current" >"$STATE_FILE"
+fi
+
+# --- External dead-man's switch ---------------------------------------------
+#
+# Everything above runs ON the Pi, so none of it can report the Pi being down:
+# power cut, kernel panic or a dead tailscale0 all look exactly like silence,
+# and silence is indistinguishable from "nothing is wrong". Only something off
+# this machine can tell those apart.
+#
+# So the direction is inverted here. Instead of an outside service polling us
+# -- which would need an inbound route into a tailnet-only host -- we ping out
+# on every run, and the far end alerts when the pings stop. That needs no open
+# port and no public exposure, and it fails safe: anything that stops this
+# script also stops the heartbeat.
+#
+# Deliberately last: a heartbeat is a claim that the checks above ran and were
+# read. Pinging earlier would keep the far end quiet while this script was
+# dying halfway through, which is precisely the case it exists to catch.
+#
+# The /fail path is redundant with our own Telegram alert, on purpose: if the
+# bot token is wrong or Telegram is unreachable, the far end is the only thing
+# left that can still reach you.
+if [ -n "$HEARTBEAT_URL" ]; then
+	if [ "$current" = "healthy" ]; then
+		beat="$HEARTBEAT_URL"
+	else
+		beat="${HEARTBEAT_URL%/}/fail"
+	fi
+	# Never fail the watchdog over the heartbeat: a flaky uplink must not turn
+	# a healthy cluster into a unit failure.
+	curl -sf -m 10 -o /dev/null --retry 2 "$beat" ||
+		echo "homelab-watchdog: heartbeat ping failed" >&2
 fi
 
 [ "$current" = "healthy" ]

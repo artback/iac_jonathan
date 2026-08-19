@@ -26,6 +26,18 @@
 #   ansible-playbook -i inventory.ini playbooks/resilience.yml -e @/tmp/alertvars.yml
 #   shred -u /tmp/alertvars.yml
 #
+# To arm the external dead-man's switch, pass the heartbeat URL:
+#
+#   ansible-playbook -i inventory.ini playbooks/resilience.yml \
+#     -e resilience_heartbeat_url=https://hc-ping.com/<uuid>
+#
+# Nothing on the Pi can report the Pi being down -- a power cut, a panic or a
+# dead tailscale0 all look like silence, and silence looks like health. The
+# watchdog therefore pings outwards on every run and the far end alerts when
+# the pings stop. Outbound-only, so no inbound route into the tailnet is
+# needed, and it fails safe: whatever stops the watchdog stops the heartbeat.
+# Leave it empty and the ping is skipped entirely.
+#
 # Both credential tasks are safe to re-run: the file is created with
 # force: false and each line is only written when a non-empty value is given,
 # so a plain run never blanks a token that is already set.

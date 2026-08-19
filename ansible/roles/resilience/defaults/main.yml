@@ -37,6 +37,12 @@ resilience_telegram_chat_id: ""
 # Nightly pg_dumpall output. Checked for freshness because this silently
 # stopped for seven days during the 2026-08-13 Consul outage.
 resilience_backup_dir: "/home/dwight/backups/postgres"
+
+# External dead-man's switch. The watchdog pings this on every run; the far end
+# alerts when the pings stop, which is the only way to learn that the Pi itself
+# is down -- nothing running on the Pi can report its own absence. Empty
+# disables the ping entirely, so the watchdog is unaffected until it is set.
+resilience_heartbeat_url: ""
 # 30h, not 24h: the job runs at 05:00, so a 24h threshold would false-alarm
 # every morning before it fires.
 resilience_backup_max_age_hours: 30
