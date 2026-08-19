@@ -11,7 +11,7 @@
 # Managed by ansible (roles/resilience). Do not edit by hand.
 set -u
 
-ENV_FILE=/etc/homelab-alert.env
+ENV_FILE=${ENV_FILE:-/etc/homelab-alert.env}
 
 if [ ! -r "$ENV_FILE" ]; then
 	echo "homelab-alert: $ENV_FILE is missing; dropping message: $*" >&2

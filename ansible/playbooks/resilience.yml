@@ -13,6 +13,23 @@
 #     -e resilience_telegram_token=123456:ABC... \
 #     -e resilience_telegram_chat_id=<your Telegram chat id>
 #
+# The alert bot IS homelab-bot: the watchdog and the bot share one token, so an
+# alert lands in the same chat whose buttons you then use to investigate it.
+# The token is not stored here -- it lives in the Nomad variable
+# nomad/jobs/homelab-bot, and this repository is public. To re-apply it without
+# putting the secret on a command line or in the shell history:
+#
+#   umask 077
+#   nomad var get -out=json nomad/jobs/homelab-bot | python3 -c \
+#     'import json,sys; print("resilience_telegram_token: \"%s\"" %
+#      json.load(sys.stdin)["Items"]["telegram_token"])' > /tmp/alertvars.yml
+#   ansible-playbook -i inventory.ini playbooks/resilience.yml -e @/tmp/alertvars.yml
+#   shred -u /tmp/alertvars.yml
+#
+# Both credential tasks are safe to re-run: the file is created with
+# force: false and each line is only written when a non-empty value is given,
+# so a plain run never blanks a token that is already set.
+#
 - name: Harden the Consul/Nomad control plane against boot races
   hosts: servers
   become: true

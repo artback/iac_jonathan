@@ -14,7 +14,7 @@
 # Managed by ansible (roles/resilience). Do not edit by hand.
 set -u
 
-ENV_FILE=/etc/homelab-watchdog.env
+ENV_FILE=${ENV_FILE:-/etc/homelab-watchdog.env}
 [ -r "$ENV_FILE" ] && . "$ENV_FILE"
 
 CONSUL_ADDR=${CONSUL_ADDR:-http://127.0.0.1:8500}
