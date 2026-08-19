@@ -160,6 +160,14 @@ def prom(query):
     return float(res[0]["value"][1]) if res else None
 
 
+def nav_row(cur):
+    """Refresh has to re-run the view you are on. A single "Refresh" wired to
+    the home action just navigates away, which is the opposite of refreshing —
+    so each view names itself here."""
+    return [ {"text": "\U0001f504 Refresh", "callback_data": cur},
+             {"text": "\u2190 Menu",        "callback_data": "menu"} ]
+
+
 def menu_rows():
     row1 = [ {"text": "\U0001f4ca Status", "callback_data": "status"},
              {"text": "\U0001f4e6 Jobs",   "callback_data": "jobs"} ]
@@ -254,7 +262,7 @@ def view_usage():
             lines.append("up   " + ago(upt).replace(" ago", ""))
     except Exception:
         pass
-    return "\n".join(lines), kb([ back_row() ])
+    return "\n".join(lines), kb([ nav_row("usage") ])
 
 
 def backup_line():
@@ -284,7 +292,7 @@ def view_backup():
             lines.append(BAD + " nothing in " + esc(BACKUPS))
     except Exception as e:
         lines.append(WARN + " " + esc(str(e)[:60]))
-    return "\n".join(lines), kb([ back_row() ])
+    return "\n".join(lines), kb([ nav_row("backup") ])
 
 
 def view_logmenu():
@@ -326,8 +334,7 @@ def view_logs(job):
         if text.strip():
             break
     tail = "\n".join(text.splitlines()[-18:]) or "(no output)"
-    rows = [ [ {"text": "\U0001f504 Refresh", "callback_data": "log:" + job[:40]} ],
-             back_row() ]
+    rows = [ nav_row("log:" + job[:40]) ]
     return ("\U0001f4dc <b>" + esc(job) + "</b> — " + esc(task) + "\n\n<pre>" +
             esc(tail[-3200:]) + "</pre>"), kb(rows)
 
@@ -386,7 +393,7 @@ def main():
                           "jobs": "jobs", "usage": "usage", "backup": "backup",
                           "logs": ("log:" + arg) if arg else "logmenu"}.get(cmd)
                 if not action:
-                    continue
+                    action = "menu"      # silence reads as a broken bot
                 try:
                     text, markup = render(action)
                 except Exception as e:

@@ -183,11 +183,22 @@ def api(method, **params):
     with urllib.request.urlopen(API + "/" + method, data, timeout=70) as r:
         return json.load(r)
 
-def say(chat, text):
+def plain(chat, text):
+    """For replies to chats that are not allowed — no keyboard, because the
+    menu belongs to customers and a stranger should get a flat refusal."""
     try:
         api("sendMessage", chat_id=chat, text=text)
     except Exception:
         pass
+
+
+def note(chat, text, mid=None):
+    """Every reply is a card carrying the menu, so no message is a dead end.
+    Pass mid to rewrite an earlier card rather than stack a new one."""
+    r = card(chat, text, kb(pb_menu_rows()), mid)
+    if mid:
+        return mid
+    return ((r or {}).get("result") or {}).get("message_id")
 
 def queue_status():
     r = subprocess.run(["lpstat", "-h", CUPS, "-p", PRINTER, "-o"],
@@ -221,13 +232,13 @@ def print_file(path, title):
     m = re.search(r"request id is (\S+)", r.stdout)
     return m.group(1) if m else r.stdout.strip()
 
-def watch_job(chat, job, name):
+def watch_job(chat, job, name, mid=None):
     try:
-        watch_job_inner(chat, job, name)
+        watch_job_inner(chat, job, name, mid)
     except Exception as e:
         print("watcher error:", e, flush=True)
 
-def watch_job_inner(chat, job, name):
+def watch_job_inner(chat, job, name, mid=None):
     # The queue is the source of truth: job gone + in completed = printed;
     # gone but not completed = canceled/failed; still queued = printer off.
     nudged = False
@@ -239,26 +250,27 @@ def watch_job_inner(chat, job, name):
             done = subprocess.run(["lpstat", "-h", CUPS, "-W", "completed", "-o"],
                                   capture_output=True, text=True, timeout=15).stdout
             if job in done:
-                say(chat, "Printed: " + name + " ✅ And it didn't even catch fire.")
+                note(chat, OK + " <b>Printed</b> — " + esc(name)
+                           + "\n<i>And it didn't even catch fire.</i>", mid)
             else:
-                say(chat, "The printer has rejected " + name + " ❌ Sabre's official "
-                         + "position is that this is a feature. Check /status "
-                         + "or try a different format.")
+                note(chat, BAD + " <b>Rejected</b> — " + esc(name)
+                           + "\n<i>Sabre's official position is that this is a "
+                             "feature. Try Status, or a different format.</i>", mid)
             return
         if not nudged and i >= 11:
-            say(chat, "The printer appears to be powered off. " + name + " is safely "
-                     + "queued and prints the moment it wakes up ⏳ "
-                     + "A Sabre product never forgets. Unlike Creed.")
+            note(chat, WARN + " <b>Printer appears to be off</b> — " + esc(name)
+                       + "\n<i>Safely queued; prints the moment it wakes up. "
+                         "A Sabre product never forgets. Unlike Creed.</i>", mid)
             nudged = True
-    say(chat, "After 12 hours, Sabre has decided " + name
-             + " is now Dunder Mifflin's problem. Check /status.")
+    note(chat, WARN + " <b>" + esc(name) + "</b> is now Dunder Mifflin's problem."
+               + "\n<i>Twelve hours is a long time, even for Sabre.</i>", mid)
 
 
 def pb_menu_rows():
     row1 = [ {"text": "\U0001f5a8 Status", "callback_data": "pb:status"},
              {"text": "\U0001f58b Ink",    "callback_data": "pb:ink"} ]
     row2 = [ {"text": "\U0001f9f9 Clear queue", "callback_data": "pb:clear"},
-             {"text": "\U0001f504 Refresh",     "callback_data": "pb:status"} ]
+             {"text": "\U0001f4e0 Scan",        "callback_data": "pb:scan"} ]
     return [ row1, row2 ]
 
 
@@ -321,7 +333,7 @@ def handle(msg):
     name = (msg.get("from") or {}).get("first_name", "someone")
     if text.startswith("/join"):
         if is_allowed(chat):
-            say(chat, "You're already a valued Sabre customer.")
+            note(chat, OK + " You're already a valued Sabre customer.")
             return
         m = re.search(r"/join\s+(\S+)", text)
         code = m.group(1) if m else ""
@@ -329,20 +341,21 @@ def handle(msg):
             st = load_state()
             inv = st["invites"].get(code)
             if not inv or inv["expires"] < time.time():
-                say(chat, "That invite code is invalid or expired. "
-                         + "Ask a Sabre customer for a fresh /invite.")
+                plain(chat, "That invite code is invalid or expired. "
+                            "Ask a Sabre customer for a fresh /invite.")
                 return
             del st["invites"][code]
             st["members"][chat] = {"name": name, "invited_by": inv["by"],
                                    "joined": time.strftime("%Y-%m-%d")}
             save_state(st)
-        say(chat, "Welcome to Sabre Printing Solutions, " + name
-                 + "! It's pronounced 'SAH-bray.' Send me anything to print, "
-                 + "or /help for the full suite.")
-        broadcast(name + " (" + chat + ") joined via invite 🎟")
+        note(chat, OK + " <b>Welcome to Sabre Printing Solutions, " + esc(name)
+                   + "</b>\n<i>It's pronounced 'SAH-bray.' Send me anything to "
+                     "print, or /help for the full suite.</i>")
+        broadcast("\U0001f39f <b>" + esc(name) + "</b> (" + esc(chat)
+                  + ") joined via invite")
         return
     if not is_allowed(chat):
-        say(chat, "You are not an authorized Sabre customer. "
+        plain(chat, "You are not an authorized Sabre customer. "
                  + "This incident will be reported to Jo Bennett. "
                  + "(Your chat id is " + chat + " — an existing customer "
                  + "can /invite you.)")
@@ -361,8 +374,9 @@ def handle(msg):
                              if i["expires"] > time.time()}
             st["invites"][code] = {"by": chat, "expires": time.time() + 86400}
             save_state(st)
-        say(chat, "🎟 Invite code (valid 24h, single use):\n\n" + code
-                 + "\n\nHave them message me:  /join " + code)
+        note(chat, "\U0001f39f <b>Invite code</b> <i>(24h, single use)</i>\n\n"
+                   "<code>" + esc(code) + "</code>\n\n"
+                   "<i>Have them message me:</i>  <code>/join " + esc(code) + "</code>")
         return
     if text.startswith("/members"):
         st = load_state()
@@ -371,7 +385,8 @@ def handle(msg):
                  for i in sorted(BASE_ALLOWED)]
         lines += [nm.get(c, m["name"]) + " (" + c + ", joined " + m["joined"] + ")"
                   for c, m in sorted(st["members"].items())]
-        say(chat, "👥 Sabre Customer Registry:\n" + "\n".join(lines))
+        note(chat, "\U0001f465 <b>Sabre Customer Registry</b>\n\n"
+                   + "\n".join("• " + esc(l) for l in lines))
         return
     if text.startswith("/revoke"):
         m = re.search(r"/revoke\s+(\S+)", text)
@@ -381,33 +396,36 @@ def handle(msg):
             if target in st["members"]:
                 gone = st["members"].pop(target)
                 save_state(st)
-                say(chat, "Revoked " + gone["name"] + " (" + target + "). "
-                         + "Sabre wishes them well in their future endeavors.")
+                note(chat, OK + " Revoked <b>" + esc(gone["name"]) + "</b> ("
+                           + esc(target) + ")\n<i>Sabre wishes them well in their "
+                             "future endeavors.</i>")
             elif target in BASE_ALLOWED:
-                say(chat, "That member is set in the vars file — remove them "
-                         + "there and redeploy.")
+                note(chat, WARN + " That member is set in the vars file — remove "
+                           "them there and redeploy.")
             else:
-                say(chat, "Usage: /revoke CHAT_ID  (see /members)")
+                note(chat, "<i>Usage:</i> <code>/revoke CHAT_ID</code>  "
+                           "<i>(see /members)</i>")
         return
     if text.startswith("/help"):
-        say(chat, "📋 Sabre Command Suite (it's pronounced 'SAH-bray'):\n\n"
-                 + "Send any file or photo — prints it\n"
-                 + "/scan — scan the flatbed, get a JPG back\n"
-                 + "/scan pdf — same, as PDF\n"
-                 + "/status — queue + printer state\n"
-                 + "/ink — cartridge levels\n"
-                 + "/cancel N — cancel job N\n"
-                 + "/clear — cancel every waiting job\n"
-                 + "/invite — one-time code to add someone\n"
-                 + "/members — who's allowed\n"
-                 + "/revoke ID — remove an invited member\n"
-                 + "/help — this list")
+        note(chat, "\U0001f4cb <b>Sabre Command Suite</b>\n"
+                   "<i>(it's pronounced 'SAH-bray')</i>\n\n"
+                   "Send any <b>file or photo</b> — prints it\n"
+                   "<b>/scan</b> — scan the flatbed, get a JPG\n"
+                   "<b>/scan pdf</b> — same, as PDF\n"
+                   "<b>/status</b> — queue + printer state\n"
+                   "<b>/ink</b> — cartridge levels\n"
+                   "<b>/cancel</b> N — cancel job N\n"
+                   "<b>/clear</b> — cancel every waiting job\n"
+                   "<b>/invite</b> — one-time code to add someone\n"
+                   "<b>/members</b> — who's allowed\n"
+                   "<b>/revoke</b> ID — remove an invited member")
         return
     if text.startswith("/scan"):
         want_pdf = "pdf" in text
-        say(chat, "📠 Sabre Imaging Division: scanning the platen… (place the "
-                 + "document face-down, this takes ~30s)")
-        threading.Thread(target=do_scan, args=(chat, want_pdf), daemon=True).start()
+        mid = note(chat, "\U0001f4e0 <b>Sabre Imaging Division</b>\n"
+                         "<i>Scanning the platen — place the document face-down. "
+                         "This takes about 30 seconds.</i>")
+        threading.Thread(target=do_scan, args=(chat, want_pdf, mid), daemon=True).start()
         return
     if text.startswith("/menu"):
         t, k = pb_view_status()
@@ -423,7 +441,7 @@ def handle(msg):
                                      capture_output=True, text=True, timeout=15).stdout
             jobs = re.findall(r"^(\S+-\d+)", pending, re.M)
             if not jobs:
-                say(chat, "The queue is already empty. Sabre efficiency.")
+                note(chat, OK + " The queue is already empty. Sabre efficiency.")
                 return
             failed = []
             for j in jobs:
@@ -431,33 +449,39 @@ def handle(msg):
                                    capture_output=True, text=True, timeout=15)
                 if r.returncode != 0:
                     failed.append(j + ": " + r.stderr.strip())
-            msg = "Canceled " + str(len(jobs) - len(failed)) + " job(s) 🧹"
+            out = OK + " Canceled <b>" + str(len(jobs) - len(failed)) + "</b> job(s)"
             if failed:
-                msg += "\nCouldn't cancel:\n" + "\n".join(failed)
-            say(chat, msg)
+                out += "\n" + WARN + " Couldn't cancel:\n<code>" \
+                       + esc("\n".join(failed)) + "</code>"
+            note(chat, out)
         except Exception as e:
-            say(chat, "Clear failed: " + str(e))
+            note(chat, BAD + " <b>Clear failed</b>\n<code>"
+                       + esc(str(e)[:150]) + "</code>")
         return
     if text.startswith("/cancel"):
         m = re.search(r"/cancel\s+(\d+)", text)
         if not m:
-            say(chat, "Usage: /cancel N  (job number from /status)")
+            note(chat, "<i>Usage:</i> <code>/cancel N</code>  "
+                       "<i>(job number from Status)</i>")
             return
         j = PRINTER + "-" + m.group(1)
         r = subprocess.run(["cancel", "-h", CUPS, j],
                            capture_output=True, text=True, timeout=15)
-        say(chat, ("Canceled " + j + " 🧹") if r.returncode == 0
-                 else "Couldn't cancel " + j + ": " + r.stderr.strip())
+        note(chat, (OK + " Canceled <b>" + esc(j) + "</b>") if r.returncode == 0
+                   else WARN + " Couldn't cancel <b>" + esc(j) + "</b>\n<code>"
+                        + esc(r.stderr.strip()[:120]) + "</code>")
         return
     if text.startswith("/ink"):
         t, k = pb_view_ink()
         card(chat, t, k)
         return
     if text.startswith("/start") or (text and not msg.get("document") and not msg.get("photo")):
-        say(chat, "Welcome to Sabre Printing Solutions. It's pronounced 'SAH-bray.'\n\n"
-                 + "Send a PDF, photo, text file or office doc (docx/xlsx/pptx/odt) "
-                 + "and it prints on " + PRINTER + ". Printer off? The job waits — "
-                 + "a Sabre product never forgets.\n\n/help — all commands")
+        note(chat, "\U0001f5a8 <b>Sabre Printing Solutions</b>\n"
+                   "<i>It's pronounced 'SAH-bray.'</i>\n\n"
+                   "Send a PDF, photo, text file or office doc "
+                   "(docx/xlsx/pptx/odt) and it prints on <b>" + esc(PRINTER) + "</b>.\n\n"
+                   "<i>Printer off? The job waits — a Sabre product never "
+                   "forgets.</i>\n\n<b>/help</b> — all commands")
         return
     doc = msg.get("document")
     convert = False
@@ -468,9 +492,10 @@ def handle(msg):
         elif GOTENBERG and name_l.endswith(CONVERT_EXT):
             convert = True
         else:
-            say(chat, "Sabre does not currently support " + str(doc.get("mime_type"))
-                     + ". Our engineers in Tallahassee accept PDF, images, text, "
-                     + "or office docs (docx/xlsx/pptx/odt...).")
+            note(chat, WARN + " <b>Unsupported format</b> — <code>"
+                       + esc(str(doc.get("mime_type"))) + "</code>\n"
+                       "<i>Our engineers in Tallahassee accept PDF, images, text, "
+                       "or office docs (docx/xlsx/pptx/odt…).</i>")
             return
     if msg.get("photo"):
         doc = max(msg["photo"], key=lambda p: p.get("file_size", 0))
@@ -489,17 +514,20 @@ def handle(msg):
                 f.write(r.read())
             tmp = f.name
         target = tmp
+        mid = note(chat, "\U0001f5a8 <b>" + esc(name) + "</b>\n<i>"
+                         + ("Routing through the Sabre Document Excellence Pipeline™…"
+                            if convert else "Sending to the printer…") + "</i>")
         if convert:
-            say(chat, "Routing " + name + " through the Sabre Document Excellence Pipeline™…")
             pdf_tmp = to_pdf(tmp, name)
             target = pdf_tmp
         job = print_file(target, name)
-        say(chat, "Sabre job " + job.rsplit("-", 1)[-1] + " accepted 🖨️ It's pronounced 'SAH-bray.'")
-        threading.Thread(target=watch_job, args=(chat, job, name), daemon=True).start()
+        note(chat, "\U0001f5a8 <b>Job " + esc(job.rsplit("-", 1)[-1]) + " accepted</b> — "
+                   + esc(name) + "\n<i>It's pronounced 'SAH-bray.'</i>", mid)
+        threading.Thread(target=watch_job, args=(chat, job, name, mid), daemon=True).start()
     except Exception as e:
-        note = " (Telegram bots can only fetch files up to 20MB)" if "400" in str(e) else ""
-        say(chat, "Print failed: " + str(e) + note
-                 + "\nYou should have gotten the insurance, like Jo said.")
+        hint = " (Telegram bots can only fetch files up to 20MB)" if "400" in str(e) else ""
+        note(chat, BAD + " <b>Print failed</b>\n<code>" + esc(str(e)[:150] + hint)
+                   + "</code>\n<i>You should have gotten the insurance, like Jo said.</i>")
     finally:
         for p in (tmp, pdf_tmp):
             if p and os.path.exists(p):
@@ -518,14 +546,15 @@ def send_document(chat, data, filename):
     with urllib.request.urlopen(req, timeout=120) as r:
         r.read()
 
-def do_scan(chat, want_pdf):
+def do_scan(chat, want_pdf, mid=None):
     try:
         req = urllib.request.Request(ESCL + "/ScanJobs", data=SCAN_XML.encode(),
                                      headers={"Content-Type": "text/xml"})
         with urllib.request.urlopen(req, timeout=30) as r:
             job = r.headers.get("Location", "")
         if not job:
-            say(chat, "The scanner didn't accept the job — is the printer on?")
+            note(chat, WARN + " <b>The scanner didn't accept the job</b>\n"
+                       "<i>Is the printer on?</i>", mid)
             return
         data = None
         for _ in range(15):
@@ -542,7 +571,8 @@ def do_scan(chat, want_pdf):
         except Exception:
             pass
         if not data:
-            say(chat, "Scan timed out — lid open, or printer asleep? Try again.")
+            note(chat, WARN + " <b>Scan timed out</b>\n<i>Lid open, or printer "
+                       "asleep? Try again.</i>", mid)
             return
         stamp = time.strftime("%Y%m%d-%H%M")
         if want_pdf and GOTENBERG:
@@ -558,13 +588,14 @@ def do_scan(chat, want_pdf):
             send_document(chat, data, "scan-" + stamp + ".pdf")
         else:
             send_document(chat, data, "scan-" + stamp + ".jpg")
-        say(chat, "Scan complete ✅ Sabre Imaging thanks you for your business.")
+        note(chat, OK + " <b>Scan complete</b>\n<i>Sabre Imaging thanks you for "
+                   "your business.</i>", mid)
     except Exception as e:
-        say(chat, "Scan failed: " + str(e))
+        note(chat, BAD + " <b>Scan failed</b>\n<code>" + esc(str(e)[:150]) + "</code>", mid)
 
 def broadcast(text):
     for c in allowed_ids():
-        say(c, text)
+        note(c, text)
 
 def alert_loop():
     # One ping per state change, to every allowed chat. Checks every 30 min.
@@ -608,6 +639,14 @@ def main():
                     if not is_allowed(chat):
                         continue
                     tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
+                    if cq.get("data") == "pb:scan":
+                        mid = cq["message"]["message_id"]
+                        note(chat, "\U0001f4e0 <b>Sabre Imaging Division</b>\n"
+                                   "<i>Scanning the platen — place the document "
+                                   "face-down. This takes about 30 seconds.</i>", mid)
+                        threading.Thread(target=do_scan, args=(chat, False, mid),
+                                         daemon=True).start()
+                        continue
                     try:
                         t, k = pb_render(cq.get("data", "pb:status"))
                     except Exception as e:
