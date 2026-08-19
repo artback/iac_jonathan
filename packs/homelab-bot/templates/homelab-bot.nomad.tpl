@@ -72,24 +72,14 @@ BACKUPS = os.environ.get("BACKUP_DIR", "/backups")
 CTX = ssl.create_default_context(cafile=os.environ["NOMAD_CACERT"])
 CTX.load_cert_chain(os.environ["NOMAD_CLIENT_CERT"], os.environ["NOMAD_CLIENT_KEY"])
 
+# --- BEGIN SHARED UI (managed by scripts/sync-bot-ui.sh) ---
 OK, WARN, BAD = "✅", "⚠️", "❌"
 
 
-def nomad(path):
-    req = urllib.request.Request(NOMAD + path,
-                                 headers={"X-Nomad-Token": os.environ["NOMAD_TOKEN"]})
-    with urllib.request.urlopen(req, context=CTX, timeout=20) as r:
-        return json.load(r)
-
-
-def prom(query):
-    url = PROM + "/api/v1/query?query=" + urllib.parse.quote(query)
-    with urllib.request.urlopen(url, timeout=20) as r:
-        res = json.load(r)["data"]["result"]
-    return float(res[0]["value"][1]) if res else None
-
-
 def tg(method, payload):
+    """Call the Telegram Bot API. Never raises: a bot that dies on a transient
+    API blip is worse than one that logs and carries on."""
+    import json, urllib.request
     body = json.dumps(payload).encode()
     req = urllib.request.Request("https://api.telegram.org/bot" + TOKEN + "/" + method,
                                  data=body, headers={"Content-Type": "application/json"})
@@ -102,18 +92,18 @@ def tg(method, payload):
 
 
 def esc(t):
-    return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def bar(pct, width=10):
     """A ten-cell meter reads faster than a number on a phone screen."""
-    pct = max(0.0, min(100.0, pct))
+    pct = max(0.0, min(100.0, float(pct)))
     filled = int(round(pct / 100 * width))
     return "█" * filled + "░" * (width - filled)
 
 
-def dot(pct):
-    return OK if pct < 75 else (WARN if pct < 90 else BAD)
+def dot(pct, warn=75, bad=90):
+    return OK if pct < warn else (WARN if pct < bad else BAD)
 
 
 def ago(seconds):
@@ -127,11 +117,47 @@ def ago(seconds):
 
 
 def human(n):
+    n = float(n)
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if abs(n) < 1024:
             return str(round(n, 1)) + unit
         n /= 1024
     return str(round(n, 1)) + "PB"
+
+
+def kb(rows):
+    return {"inline_keyboard": rows}
+
+
+def back_row(target="menu"):
+    return [ {"text": "← Menu", "callback_data": target} ]
+
+
+def card(chat, text, markup, message_id=None):
+    """Edit in place when we can. One tidy card beats a wall of near-identical
+    replies scrolling up the chat, which is the whole point on a phone."""
+    payload = {"chat_id": chat, "text": text, "parse_mode": "HTML",
+               "disable_web_page_preview": True, "reply_markup": markup}
+    if message_id:
+        payload["message_id"] = message_id
+        return tg("editMessageText", payload)
+    return tg("sendMessage", payload)
+# --- END SHARED UI ---
+
+def nomad(path):
+    import json, urllib.request
+    req = urllib.request.Request(NOMAD + path,
+                                 headers={"X-Nomad-Token": os.environ["NOMAD_TOKEN"]})
+    with urllib.request.urlopen(req, context=CTX, timeout=20) as r:
+        return json.load(r)
+
+
+def prom(query):
+    import json, urllib.parse, urllib.request
+    url = PROM + "/api/v1/query?query=" + urllib.parse.quote(query)
+    with urllib.request.urlopen(url, timeout=20) as r:
+        res = json.load(r)["data"]["result"]
+    return float(res[0]["value"][1]) if res else None
 
 
 def menu_rows():
@@ -143,13 +169,6 @@ def menu_rows():
              {"text": "\U0001f504 Refresh","callback_data": "status"} ]
     return [ row1, row2, row3 ]
 
-
-def kb(rows):
-    return {"inline_keyboard": rows}
-
-
-def back_row():
-    return [ {"text": "← Menu", "callback_data": "menu"} ]
 
 
 def job_states():
@@ -354,11 +373,7 @@ def main():
                         text, markup = WARN + " " + esc(str(e)[:200]), kb([ back_row() ])
                     # Editing in place keeps one tidy card instead of a wall of
                     # replies, which is the whole point on a phone.
-                    tg("editMessageText", {"chat_id": chat,
-                                           "message_id": cq["message"]["message_id"],
-                                           "text": text, "parse_mode": "HTML",
-                                           "disable_web_page_preview": True,
-                                           "reply_markup": markup})
+                    card(chat, text, markup, cq["message"]["message_id"])
                     continue
                 msg = u.get("message") or {}
                 body = (msg.get("text") or "").strip()
@@ -376,9 +391,7 @@ def main():
                     text, markup = render(action)
                 except Exception as e:
                     text, markup = WARN + " " + esc(str(e)[:200]), kb([ back_row() ])
-                tg("sendMessage", {"chat_id": chat, "text": text, "parse_mode": "HTML",
-                                   "disable_web_page_preview": True,
-                                   "reply_markup": markup})
+                card(chat, text, markup)
         except Exception as e:
             print("loop error: " + str(e)[:200], flush=True)
             time.sleep(5)
