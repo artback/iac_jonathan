@@ -46,6 +46,79 @@ import json, os, re, time, urllib.request, urllib.parse
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 API = "https://api.telegram.org/bot" + TOKEN
+
+# --- BEGIN SHARED UI (managed by scripts/sync-bot-ui.sh) ---
+OK, WARN, BAD = "✅", "⚠️", "❌"
+
+
+def tg(method, payload):
+    """Call the Telegram Bot API. Never raises: a bot that dies on a transient
+    API blip is worse than one that logs and carries on."""
+    import json, urllib.request
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request("https://api.telegram.org/bot" + TOKEN + "/" + method,
+                                 data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.load(r)
+    except Exception as e:
+        print("tg " + method + " failed: " + str(e)[:120], flush=True)
+        return {}
+
+
+def esc(t):
+    return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def bar(pct, width=10):
+    """A ten-cell meter reads faster than a number on a phone screen."""
+    pct = max(0.0, min(100.0, float(pct)))
+    filled = int(round(pct / 100 * width))
+    return "█" * filled + "░" * (width - filled)
+
+
+def dot(pct, warn=75, bad=90):
+    return OK if pct < warn else (WARN if pct < bad else BAD)
+
+
+def ago(seconds):
+    if seconds < 90:
+        return str(int(seconds)) + "s ago"
+    if seconds < 5400:
+        return str(int(seconds // 60)) + "m ago"
+    if seconds < 172800:
+        return str(int(seconds // 3600)) + "h ago"
+    return str(int(seconds // 86400)) + "d ago"
+
+
+def human(n):
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024:
+            return str(round(n, 1)) + unit
+        n /= 1024
+    return str(round(n, 1)) + "PB"
+
+
+def kb(rows):
+    return {"inline_keyboard": rows}
+
+
+def back_row(target="menu"):
+    return [ {"text": "← Menu", "callback_data": target} ]
+
+
+def card(chat, text, markup, message_id=None):
+    """Edit in place when we can. One tidy card beats a wall of near-identical
+    replies scrolling up the chat, which is the whole point on a phone."""
+    payload = {"chat_id": chat, "text": text, "parse_mode": "HTML",
+               "disable_web_page_preview": True, "reply_markup": markup}
+    if message_id:
+        payload["message_id"] = message_id
+        return tg("editMessageText", payload)
+    return tg("sendMessage", payload)
+# --- END SHARED UI ---
+
 ALLOWED = {s.strip() for s in os.environ.get("ALLOWED_CHAT_IDS", "").split(",") if s.strip()}
 ARR = {
     "m": {"url": os.environ["RADARR_URL"], "key": os.environ["RADARR_KEY"],
@@ -250,6 +323,39 @@ def resolve_link(chat, text):
         return True
     return False
 
+
+def mb_menu_rows():
+    row1 = [ {"text": "\U0001f4e5 Queue",    "callback_data": "mb:queue"},
+             {"text": "\U0001f4c5 Upcoming", "callback_data": "mb:upcoming"} ]
+    row2 = [ {"text": "\U0001f4be Disk",     "callback_data": "mb:disk"},
+             {"text": "\U0001f504 Refresh",  "callback_data": "mb:disk"} ]
+    return [ row1, row2 ]
+
+
+def mb_view_disk():
+    """Free space as a used-meter, so a filling seedbox is obvious at a glance
+    rather than being two numbers to subtract in your head."""
+    lines = [ "\U0001f4be <b>Seedbox storage</b>", "" ]
+    seen = set()
+    for which in ("m", "s"):
+        a = ARR[which]
+        try:
+            for d in arr_get(a, "/diskspace"):
+                path = d.get("path", "?")
+                if path in seen:
+                    continue
+                seen.add(path)
+                free = d.get("freeSpace", 0)
+                total = d.get("totalSpace", 1) or 1
+                used_pct = 100.0 * (1 - free / total)
+                lines.append("<code>" + esc(path[:14]).ljust(14) + " " + bar(used_pct) +
+                             " " + str(int(used_pct)).rjust(3) + "%</code> " + dot(used_pct))
+                lines.append("<i>   " + human(free) + " free of " + human(total) + "</i>")
+        except Exception as e:
+            lines.append(WARN + " " + a["icon"] + " " + esc(str(e)[:50]))
+    return "\n".join(lines), kb(mb_menu_rows())
+
+
 def handle_message(msg):
     chat = str(msg["chat"]["id"])
     if chat not in ALLOWED:
@@ -263,21 +369,15 @@ def handle_message(msg):
             search(chat, "m", text[7:].strip())
         elif text.startswith("/series ") or text.startswith("/show "):
             search(chat, "s", text.split(" ", 1)[1].strip())
+        elif text.startswith("/menu"):
+            card(chat, "\U0001f3ac <b>Artback Video Club</b>\n\n"
+                       "Send a title, or paste an IMDb / TMDb link.",
+                 kb(mb_menu_rows()))
         elif text.startswith("/queue"):
             queue_report(chat)
         elif text.startswith("/disk"):
-            out = []
-            for which in ("m", "s"):
-                a = ARR[which]
-                try:
-                    for d in arr_get(a, "/diskspace"):
-                        free = round(d.get("freeSpace", 0) / 1e9)
-                        total = round(d.get("totalSpace", 1) / 1e9)
-                        out.append(a["icon"] + " " + d.get("path", "?") + " — "
-                                   + str(free) + " / " + str(total) + " GB free")
-                except Exception as e:
-                    out.append(a["icon"] + " diskspace unavailable: " + str(e))
-            say(chat, "💾 Seedbox storage:\n" + "\n".join(dict.fromkeys(out)))
+            t, k = mb_view_disk()
+            card(chat, t, k)
         elif text.startswith("/upcoming"):
             upcoming(chat)
         elif text.startswith("/"):
@@ -307,6 +407,19 @@ def handle_callback(cb):
     if chat not in ALLOWED:
         return
     data = cb.get("data", "")
+    if data.startswith("mb:"):
+        mid = cb["message"]["message_id"]
+        try:
+            if data == "mb:disk":
+                t, k = mb_view_disk()
+                card(chat, t, k, mid)
+            elif data == "mb:queue":
+                queue_report(chat)
+            elif data == "mb:upcoming":
+                upcoming(chat)
+        except Exception as e:
+            card(chat, WARN + " " + esc(str(e)[:150]), kb(mb_menu_rows()), mid)
+        return
     who = (cb.get("from") or {}).get("first_name", "")
     try:
         if data.startswith("add:"):

@@ -50,6 +50,79 @@ from io import BytesIO
 
 TOKEN = os.environ["TELEGRAM_TOKEN"]
 API = "https://api.telegram.org/bot" + TOKEN
+
+# --- BEGIN SHARED UI (managed by scripts/sync-bot-ui.sh) ---
+OK, WARN, BAD = "✅", "⚠️", "❌"
+
+
+def tg(method, payload):
+    """Call the Telegram Bot API. Never raises: a bot that dies on a transient
+    API blip is worse than one that logs and carries on."""
+    import json, urllib.request
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request("https://api.telegram.org/bot" + TOKEN + "/" + method,
+                                 data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.load(r)
+    except Exception as e:
+        print("tg " + method + " failed: " + str(e)[:120], flush=True)
+        return {}
+
+
+def esc(t):
+    return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def bar(pct, width=10):
+    """A ten-cell meter reads faster than a number on a phone screen."""
+    pct = max(0.0, min(100.0, float(pct)))
+    filled = int(round(pct / 100 * width))
+    return "█" * filled + "░" * (width - filled)
+
+
+def dot(pct, warn=75, bad=90):
+    return OK if pct < warn else (WARN if pct < bad else BAD)
+
+
+def ago(seconds):
+    if seconds < 90:
+        return str(int(seconds)) + "s ago"
+    if seconds < 5400:
+        return str(int(seconds // 60)) + "m ago"
+    if seconds < 172800:
+        return str(int(seconds // 3600)) + "h ago"
+    return str(int(seconds // 86400)) + "d ago"
+
+
+def human(n):
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024:
+            return str(round(n, 1)) + unit
+        n /= 1024
+    return str(round(n, 1)) + "PB"
+
+
+def kb(rows):
+    return {"inline_keyboard": rows}
+
+
+def back_row(target="menu"):
+    return [ {"text": "← Menu", "callback_data": target} ]
+
+
+def card(chat, text, markup, message_id=None):
+    """Edit in place when we can. One tidy card beats a wall of near-identical
+    replies scrolling up the chat, which is the whole point on a phone."""
+    payload = {"chat_id": chat, "text": text, "parse_mode": "HTML",
+               "disable_web_page_preview": True, "reply_markup": markup}
+    if message_id:
+        payload["message_id"] = message_id
+        return tg("editMessageText", payload)
+    return tg("sendMessage", payload)
+# --- END SHARED UI ---
+
 CHAT = os.environ["CHAT_ID"]
 CW = os.environ["CALIBRE_URL"].rstrip("/")
 CW_USER = os.environ["CALIBRE_USER"]
@@ -280,6 +353,32 @@ def handle_file(doc):
     say("Added: " + name + "\nIt is in Calibre-Web now — pull it from the OPDS "
         "catalogue on the Kindle.")
 
+
+def lb_menu_rows():
+    # A url button is the one thing a phone genuinely wants here: tap through
+    # to the catalogue instead of copying an address out of a chat message.
+    row1 = [ {"text": "\U0001f4da Open Calibre-Web", "url": CW} ]
+    row2 = [ {"text": "\U0001f504 Check", "callback_data": "lb:status"} ]
+    return [ row1, row2 ]
+
+
+def lb_view_status():
+    import urllib.request as _u
+    lines = [ "\U0001f4d6 <b>Librarian</b>", "" ]
+    try:
+        req = _u.Request(CW, headers={"User-Agent": "librarianbot"})
+        with _u.urlopen(req, timeout=12) as r:
+            code = r.getcode()
+        lines.append(OK + " Calibre-Web reachable (HTTP " + str(code) + ")")
+    except Exception as e:
+        lines.append(BAD + " Calibre-Web unreachable — " + esc(str(e)[:60]))
+    lines.append("")
+    lines.append("Send a <b>link</b> and it becomes an EPUB.")
+    lines.append("Send an <b>ebook file</b> and it gets filed.")
+    lines.append("<i>Either way it reaches the Kindle over OPDS.</i>")
+    return "\n".join(lines), kb(lb_menu_rows())
+
+
 def handle(msg):
     chat = str(msg["chat"]["id"])
     if chat != CHAT:
@@ -289,6 +388,10 @@ def handle(msg):
     try:
         if doc:
             handle_file(doc)
+            return
+        if text.startswith("/menu") or text.startswith("/status") or text.startswith("/start"):
+            t, k = lb_view_status()
+            card(CHAT, t, k)
             return
         m = URL_RE.search(text)
         if m:
@@ -313,6 +416,14 @@ def main():
                 updates = json.load(r)
             for u in updates.get("result", []):
                 offset = u["update_id"] + 1
+                if "callback_query" in u:
+                    cq = u["callback_query"]
+                    if str(cq["message"]["chat"]["id"]) != CHAT:
+                        continue
+                    tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
+                    t, k = lb_view_status()
+                    card(CHAT, t, k, cq["message"]["message_id"])
+                    continue
                 if "message" in u:
                     handle(u["message"])
         except Exception as e:
