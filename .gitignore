@@ -11,6 +11,12 @@ vars/*
 !vars/*.example.hcl
 # ...and `vars` alone, so a symlink of that name (git worktrees) is ignored too.
 vars
+# Timestamped rescue copies of the above. `vars/*` does not match these: the
+# name is vars.backup-<stamp>, not a path under vars/. They hold the same
+# tokens the real files do, so until this was added they sat untracked but
+# stageable in a public repo -- one `git add -A` from staging every secret
+# they contain.
+vars.backup-*/
 
 # Real inventory may contain a Tailscale auth key.
 ansible/inventory.ini
