@@ -233,3 +233,47 @@ printf '#!/bin/sh\nsleep 2\npkill -f reader.lua\nsleep 8\ncd /mnt/us/koreader\ne
   > /tmp/restart_ko.sh && chmod +x /tmp/restart_ko.sh
 nohup setsid /tmp/restart_ko.sh >/tmp/ko_restart.log 2>&1 &
 ```
+
+## Boot straight into KOReader, and stay there
+
+`kindle/boot/koreader.conf` → `/etc/upstart/koreader.conf` (0755). Requires
+root, so it cannot be installed over USB — mass storage exposes only `/mnt/us`,
+with no `/etc`. Install it over SSH.
+
+```sh
+mount -o remount,rw /
+cat > /etc/upstart/koreader.conf     # paste, or pipe from the repo copy
+chmod 755 /etc/upstart/koreader.conf
+sync && mount -o remount,ro /        # leave the rootfs as you found it
+```
+
+Three deliberate choices in that job:
+
+**`start on framework_ready`** — the same trigger the jailbreak's own bridge
+job (`/etc/upstart/kmc.conf`, NiLuJe's) uses. The framework must be up before
+anything takes the framebuffer, and a further 25s settle follows.
+
+**Tailscale starts before KOReader, not after.** It is the recovery path, so it
+must not fail along with the thing it exists to recover. This earned its keep
+on the very first boot test: KOReader had not finished starting when the device
+came back, and the only reason that was diagnosable rather than a mystery was
+that `tailscaled` was already up and answering.
+
+**A respawn loop, not a one-shot `exec`.** Quitting KOReader returns to
+KOReader, never to the Amazon reader. The loop is guarded: five exits inside
+15s each and it gives up deliberately, because a tight relaunch loop on a
+crashing binary leaves a hot, unusable, unreachable device — worse than the
+stock UI it was avoiding.
+
+### Getting back out
+
+The respawn loop means there is no in-KOReader way back to the Amazon reader.
+The escape hatch has to work without KOReader, so it is a file on the user
+partition — reachable over SSH, MTP, or USB:
+
+```sh
+touch /mnt/us/no_koreader_autostart    # then reboot
+```
+
+`/mnt/us/koreader_boot.log` records each start, each exit code, and how long
+KOReader ran — the first place to look if a boot misbehaves.
