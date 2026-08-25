@@ -178,3 +178,58 @@ The pattern matches the shell running it, so the command kills its own SSH
 session before any relaunch line executes, leaving KOReader stopped and the
 device unreachable once it sleeps. Match on the binary instead, or restart
 KOReader from the device.
+
+## ZenPM / ZenMTP / ZenFM (2026-08-25)
+
+Three companions to Zen UI, all from xZenLabs, installed as KOReader plugins:
+
+| Plugin | Version | What it is |
+| --- | --- | --- |
+| `zenpm.koplugin` | 1.4.1 | Package manager — install/update KOReader plugins on-device |
+| `zen_mtp.koplugin` | 1.7.0 | Trigger MTP file-transfer mode |
+| `zenfm.koplugin` | 1.0.1 | Web file manager, reachable from another device |
+
+**Install the `-koreader-ereader-` release asset, not the Kindle standalone.**
+ZenPM's standalone build is explicitly discouraged on jailbreaks that ship a
+`JAILBREAK` booklet. This device is adbreak (`/mnt/us/adbreak.log`) and has no
+such booklet, so the warning does not strictly apply — but the KOReader plugin
+build avoids the question entirely and is the same software.
+
+ZenPM and ZenFM ship both `-sf` and `-hf` backend binaries and pick at runtime,
+so the armhf/soft-float trap that applies to KOReader itself does not apply
+here.
+
+Install over SSH rather than USB — that is the entire point of the exercise,
+since mounting the volume is what orphaned files last time:
+
+```sh
+tar cf - zen_mtp.koplugin zenfm.koplugin zenpm.koplugin |
+  ssh -p 2222 root@<kindle> 'cd /mnt/us/koreader/plugins && tar xf -'
+```
+
+**ZenMTP is the one that matters.** MTP does not hand the FAT32 filesystem to
+the host, so the host cannot leave the volume dirty — which is what produced
+the `FSCK*.REN` orphans documented above. Prefer it over mass storage.
+
+**ZenFM's first login is `koreader123456789`.** Change it immediately in the
+web UI; there is no config file to pre-seed it from, and the server binds to
+every interface, so on this tailnet it is reachable from any node. Its own
+dialog warns that plain HTTP sends the password in clear. The server does not
+autostart, so it is inert until deliberately started.
+
+### Restarting KOReader over SSH, safely
+
+Establish a second path first — KOReader's dropbear dies with it:
+
+```sh
+/mnt/us/extensions/tailscale/bin/start_tailscaled_tun.sh   # then start_tailscale.sh
+```
+
+Then restart from a **script file**, never inline, so the kill pattern cannot
+match the invoking shell's own command line:
+
+```sh
+printf '#!/bin/sh\nsleep 2\npkill -f reader.lua\nsleep 8\ncd /mnt/us/koreader\nexec ./koreader.sh --kual\n' \
+  > /tmp/restart_ko.sh && chmod +x /tmp/restart_ko.sh
+nohup setsid /tmp/restart_ko.sh >/tmp/ko_restart.log 2>&1 &
+```
