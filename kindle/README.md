@@ -253,6 +253,13 @@ Three deliberate choices in that job:
 job (`/etc/upstart/kmc.conf`, NiLuJe's) uses. The framework must be up before
 anything takes the framebuffer, and a further 25s settle follows.
 
+**Tailscale starts before KOReader *and before the escape-hatch check*.** The
+first version checked the flag first and exited, so setting the flag — the one
+action you take when something is wrong — also killed remote access, which is
+the thing you need in order to fix it. Recovery must never depend on the thing
+being recovered. The flag now gates KOReader only; Tailscale comes up either
+way.
+
 **Tailscale starts before KOReader, not after.** It is the recovery path, so it
 must not fail along with the thing it exists to recover. This earned its keep
 on the very first boot test: KOReader had not finished starting when the device
