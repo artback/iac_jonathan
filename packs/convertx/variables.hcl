@@ -21,3 +21,13 @@ variable "service_tags" {
   type        = list(string)
   default     = ["convertx"]
 }
+
+# Off by default upstream, on by default here. This service is reachable only
+# from the tailnet, and the alternative is an account whose password exists
+# purely to be forgotten. Set to "false" if convertx is ever published wider
+# than the tailnet -- see the note in the pack about port 5005 and CNI.
+variable "allow_unauthenticated" {
+  description = "Skip ConvertX's login entirely (tailnet-only deployments)."
+  type        = string
+  default     = "true"
+}
