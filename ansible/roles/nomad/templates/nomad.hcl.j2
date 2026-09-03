@@ -1,3 +1,8 @@
+# NOTE: the live cluster's docker plugin block is in /etc/nomad.d/client.hcl,
+# not in the file this template renders -- the two have drifted. The gc
+# setting below was applied to client.hcl by hand on 2026-09-03 and is
+# duplicated here so a rebuilt node inherits it. Reconciling that drift is
+# still outstanding.
 # GLOBAL SETTINGS
 region = "{{ nomad_region }}"
 datacenter = "{{ nomad_datacenter }}"
@@ -29,6 +34,17 @@ client {
 
 plugin "docker" {
   config {
+
+    # Nomad deletes an unused image three minutes after the last allocation
+    # referencing it stops. Harmless for registry images, permanent for ones
+    # built locally and pushed nowhere -- museum's image was collected after a
+    # failed deploy stopped the old allocation, leaving nothing to roll back
+    # to. Thirty days keeps a rollback target; an image still in use is never
+    # collected regardless.
+    gc {
+      image       = true
+      image_delay = "720h"
+    }
     # Required by the beszel agent for S.M.A.R.T. disk monitoring
     allow_privileged = true
     volumes {
