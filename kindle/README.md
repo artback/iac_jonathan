@@ -284,3 +284,48 @@ touch /mnt/us/no_koreader_autostart    # then reboot
 
 `/mnt/us/koreader_boot.log` records each start, each exit code, and how long
 KOReader ran — the first place to look if a boot misbehaves.
+
+## Why the corruption keeps happening, and how to stop it
+
+`/mnt/us` is FAT32 — Amazon's choice, so any computer can mount it as a USB
+drive. FAT32 keeps **no journal**. Writing a file means updating the allocation
+table, the directory entry and the data as three separate steps, with no record
+of intent; interrupt it and the volume is inconsistent with nothing to replay.
+
+Plugging in makes it worse: the Kindle *unmounts* the volume and hands the raw
+block device to the host, which caches writes of its own. macOS additionally
+writes `._` AppleDouble sidecars and Spotlight index data to a filesystem it
+does not own.
+
+The Kindle's boot-time `fsck.vfat` then "repairs" it destructively. Finding
+intact data whose directory entry is gone, it cannot recover the name — the
+name *was* the destroyed entry — so it writes the data out as `FSCK0000.REN`.
+That is why a byte-perfect `filemanager.lua` sits in place while KOReader dies
+insisting the module does not exist.
+
+It happened twice in this repo's history, both times around heavy mounting, and
+the second time hit ten files across `frontend/`, `jit/`, `fonts/` and two stock
+plugins.
+
+**The fix is to stop using mass storage**, not to mitigate it:
+
+- SSH (KOReader's `SSH.koplugin`, already configured) for reading logs and
+  editing files
+- ZenMTP for moving books — MTP never hands over the block device, so the
+  Kindle keeps ownership of its own filesystem and this class of corruption
+  cannot occur
+- USBNetwork, if the package can be obtained, for SSH over the cable
+
+When mounting is unavoidable:
+
+```sh
+touch /Volumes/Kindle/.metadata_never_index   # persistent; stops Spotlight
+dot_clean -m /Volumes/Kindle                  # drop ._ sidecars
+sync; sync; diskutil eject /dev/diskN         # never just unplug
+diskutil verifyVolume /dev/diskN              # confirm consistency
+```
+
+`kindle/tools/repair-fsck-orphans.sh` classifies orphans and lists which
+modules the code is missing. Program files are better restored by re-extracting
+the release zip, which is authoritative; use the script for third-party plugin
+files the zip cannot supply.
