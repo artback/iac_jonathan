@@ -1,6 +1,6 @@
 pack {
   name = "backup"
-  description = "Nightly backup: postgres dumps + app state (n8n key, mealie, beszel) to NVMe and USB"
+  description = "Nightly backup: postgres dumps + app state (mealie, beszel, and friends) to NVMe and USB"
   version = "0.0.1"
 }
 

@@ -116,7 +116,6 @@ tasks:
             generic)  flags="-f vars/whoami.example.hcl" ;;
             fabio)    flags="--var service_ip=100.116.81.88" ;;
             mealie)   flags="--var db_postgresdb_root_password=x --var db_postgresdb_password=x" ;;
-            n8n)      flags="--var db_postgresdb_database=x --var db_postgresdb_user=x --var db_postgresdb_schema=x --var db_postgresdb_password=x" ;;
             postgres) flags="--var pg_version=16 --var pg_password=x --var pg_db_name=x" ;;
             *)        flags="" ;;
           esac

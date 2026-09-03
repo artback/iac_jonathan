@@ -92,7 +92,7 @@ See [ansible/README.md](ansible/README.md) for details.
 | :--- | :--- |
 | `Taskfile.yml` | All day-to-day commands (`task --list`). |
 | `packs/generic/` | Deploy any single-container service from a vars file. |
-| `packs/<name>/` | Dedicated packs (postgres, n8n, mealie, fabio, scriberr, webserver). |
+| `packs/<name>/` | Dedicated packs (postgres, mealie, fabio, scriberr, webserver). |
 | `vars/` | Per-service config (gitignored — may contain secrets). |
 | `scripts/` | Scaffolding + service/pack resolution helpers. |
 | `ansible/` | Node provisioning (Tailscale, Docker, Consul, Nomad). |
