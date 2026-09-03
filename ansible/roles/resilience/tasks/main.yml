@@ -52,6 +52,34 @@
   when: item.value | length > 0
   no_log: true
 
+# The watchdog's env file is templated, so it is rewritten wholesale on every
+# run -- anything added to it by lineinfile would survive exactly until the next
+# play. Secrets therefore live in their own file, created once and never
+# templated, which is the same shape that keeps the bot token alive.
+- name: Create the watchdog secrets file
+  ansible.builtin.copy:
+    dest: /etc/homelab-watchdog-secrets.env
+    owner: root
+    group: root
+    mode: "0600"
+    force: false
+    content: |
+      # Secrets for /usr/local/sbin/homelab-watchdog. Not templated: this file
+      # is created once and only ever updated key by key, so a play that runs
+      # without the values cannot blank them.
+      MINIFLUX_API_KEY=
+
+- name: Set the miniflux API key for the feed-health check
+  ansible.builtin.lineinfile:
+    path: /etc/homelab-watchdog-secrets.env
+    regexp: "^MINIFLUX_API_KEY="
+    line: "MINIFLUX_API_KEY=\"{{ resilience_miniflux_api_key }}\""
+    owner: root
+    group: root
+    mode: "0600"
+  when: resilience_miniflux_api_key | length > 0
+  no_log: true
+
 # --- systemd drop-ins --------------------------------------------------------
 
 - name: Create systemd drop-in directories

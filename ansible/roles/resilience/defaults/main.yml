@@ -48,3 +48,14 @@ resilience_heartbeat_url: ""
 resilience_backup_max_age_hours: 30
 resilience_backup_min_bytes: 100000
 
+
+# Feed health. The watchdog asks miniflux which feeds are stuck and alerts on
+# that separately from the cluster's own healthy/unhealthy state -- a broken
+# feed is not a broken homelab, and reporting it as one devalues the alert.
+# Empty MINIFLUX_URL disables the check entirely.
+resilience_miniflux_url: "http://127.0.0.1:8081"
+# Miniflux increments this per failed fetch, so a count filters out the
+# transient failures every feed has; 3 means genuinely stuck.
+resilience_feed_max_errors: 3
+# Secret: supply at run time, never committed. Same handling as the bot token.
+resilience_miniflux_api_key: ""

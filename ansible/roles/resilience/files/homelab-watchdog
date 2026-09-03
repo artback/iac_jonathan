@@ -20,6 +20,11 @@ set -u
 WATCHDOG_ENV_FILE=${WATCHDOG_ENV_FILE:-/etc/homelab-watchdog.env}
 [ -r "$WATCHDOG_ENV_FILE" ] && . "$WATCHDOG_ENV_FILE"
 
+# Secrets live apart from the templated settings above, so that re-running
+# ansible without them cannot blank them.
+WATCHDOG_SECRETS_FILE=${WATCHDOG_SECRETS_FILE:-/etc/homelab-watchdog-secrets.env}
+[ -r "$WATCHDOG_SECRETS_FILE" ] && . "$WATCHDOG_SECRETS_FILE"
+
 CONSUL_ADDR=${CONSUL_ADDR:-http://127.0.0.1:8500}
 WATCHED_UNITS=${WATCHED_UNITS:-consul nomad docker tailscaled}
 IGNORED_CHECK_SERVICES=${IGNORED_CHECK_SERVICES:-}
@@ -112,6 +117,70 @@ if [ "$current" != "$previous" ]; then
 		/usr/local/sbin/homelab-alert "$message"
 	fi
 	printf '%s' "$current" >"$STATE_FILE"
+fi
+
+# --- Feed health ------------------------------------------------------------
+#
+# A dead feed is not a dead cluster. Miniflux's Feber feed failed for seven days
+# -- parsing_error_count climbing, TLS handshake refused -- while every check
+# above stayed green, because nothing was looking at feeds at all.
+#
+# This looks, but keeps its own state and sends its own message. Folding it into
+# the healthy/unhealthy state above would report "homelab unhealthy" because one
+# Swedish tech blog changed its TLS config, and an alert that cries wolf is one
+# you stop reading -- which costs you the alert that matters.
+#
+# The threshold is a count, not a single failure: feeds fail transiently all the
+# time, and miniflux increments the counter per failure, so >= 3 means genuinely
+# stuck rather than briefly unlucky.
+if [ -n "${MINIFLUX_URL:-}" ] && [ -n "${MINIFLUX_API_KEY:-}" ]; then
+	FEED_STATE="$(dirname "$STATE_FILE")/feeds"
+	feeds_json=$(curl -sf -m 15 -H "X-Auth-Token: ${MINIFLUX_API_KEY}" \
+		"${MINIFLUX_URL%/}/v1/feeds" 2>/dev/null)
+
+	# No answer means miniflux itself is down or unreachable; that is the infra
+	# checks' business, not this one's. Saying nothing avoids reporting every
+	# feed as broken every time the container restarts.
+	if [ -n "$feeds_json" ]; then
+		# jq does the escaping as well as the formatting. Escaping afterwards
+		# with tr would strip the <b>/<i> tags added here along with the
+		# characters it is meant to neutralise.
+		#
+		# Miniflux prefixes network failures with a long, identical sentence;
+		# it is the same on every broken feed and pushes the part that differs
+		# off the end of the line, so it is dropped.
+		broken=$(printf '%s' "$feeds_json" | jq -r --argjson n "${FEED_MAX_ERRORS:-3}" '
+			def clean: gsub("[<>&]"; "");
+			[ .[] | select((.parsing_error_count // 0) >= $n) ]
+			| sort_by(.title) | .[]
+			| "• <b>" + (.title | clean) + "</b> ("
+			  + ((.parsing_error_count // 0) | tostring) + " fails)\n  <i>"
+			  + ( ( if ((.parsing_error_message // "") == "")
+			        then "unknown error" else .parsing_error_message end )
+			      | gsub("Miniflux is not able to reach this website due to a network error: "; "")
+			      | gsub("unable to open database file: no such file or directory"; "database unavailable")
+			      | clean | .[0:120] )
+			  + "</i>"' 2>/dev/null)
+
+		feed_prev=""
+		[ -r "$FEED_STATE" ] && feed_prev=$(cat "$FEED_STATE")
+		if [ -n "$broken" ] ; then feed_cur="broken" ; else feed_cur="ok" ; fi
+
+		if [ "$feed_cur" != "$feed_prev" ] ; then
+			if [ "$feed_cur" = "broken" ] ; then
+				# Literal emoji, not a \U escape: this runs under dash, whose
+				# printf handling of \U is not something to bet a mute alert on.
+				/usr/local/sbin/homelab-alert "📰 <b>Miniflux feeds failing</b>
+
+${broken}"
+			elif [ -n "$feed_prev" ] ; then
+				# Only on a real recovery, never on the first ever run.
+				/usr/local/sbin/homelab-alert "📰 <b>Miniflux feeds recovered</b>
+All feeds fetching again."
+			fi
+			printf '%s' "$feed_cur" >"$FEED_STATE"
+		fi
+	fi
 fi
 
 # --- External dead-man's switch ---------------------------------------------
