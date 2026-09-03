@@ -76,9 +76,23 @@ job "museum-backup" {
         PGHOST     = "[[ var "service_ip" . ]]"
         PGPORT     = "[[ var "pg_port" . ]]"
         PGUSER     = "[[ var "pg_user" . ]]"
-        PGPASSWORD = "[[ var "pg_password" . ]]"
         PGDATABASE = "[[ var "pg_db_name" . ]]"
         KEEP       = "[[ var "backup_keep" . ]]"
+      }
+
+      # Secret from a Nomad Variable, not the job spec: inline it was readable
+      # via `nomad job inspect` to any read-capable token and stored
+      # unencrypted in raft. The path is case-sensitive and must equal the job
+      # ID exactly, or the task 403s and never starts.
+      template {
+        destination = "secrets/db.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+{{ with nomadVar "nomad/jobs/museum-backup" }}
+PGPASSWORD={{ .pg_password }}
+{{ end }}
+EOH
       }
 
       resources {

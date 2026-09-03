@@ -53,11 +53,9 @@ job "museum-crawl" {
       # max_kill_timeout, and it is enough for the checkpointed records to land.
       kill_timeout = "30s"
 
-      env {
-        DATABASE_URL         = "postgres://[[ var "pg_user" . ]]:[[ var "pg_password" . ]]@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable"
+      env {service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable"
         MINIO_ENDPOINT       = "[[ var "service_ip" . ]]:[[ var "minio_port" . ]]"
         MINIO_ACCESS_KEY     = "[[ var "minio_root_user" . ]]"
-        MINIO_SECRET_KEY     = "[[ var "minio_root_password" . ]]"
         MINIO_USE_SSL        = "false"
         MUSEUM_BUCKET_NAME   = "[[ var "bucket_name" . ]]"
         KAFKA_BROKER_LOCAL   = "[[ var "service_ip" . ]]:[[ var "kafka_port" . ]]"
@@ -66,6 +64,23 @@ job "museum-crawl" {
         NOMINATIM_USER_AGENT = "[[ var "nominatim_user_agent" . ]]"
         TZ                   = "Europe/Stockholm"
       }
+
+      # Secrets from a Nomad Variable, not the job spec: inline they were
+      # readable via `nomad job inspect` and stored unencrypted in raft.
+      # DATABASE_URL is assembled here because the password is embedded in it;
+      # the non-secret parts remain pack variables.
+      template {
+        destination = "secrets/db.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+{{ with nomadVar "nomad/jobs/museum-crawl" }}
+DATABASE_URL=postgres://[[ var "pg_user" . ]]:{{ .pg_password }}@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable
+MINIO_SECRET_KEY={{ .minio_root_password }}
+{{ end }}
+EOH
+      }
+
 
       # The reservation is unchanged; only the ceiling moves. The crawl holds
       # every record it has collected in memory until the end — that is what the
@@ -93,15 +108,30 @@ job "museum-crawl" {
         args  = ["reindex"]
       }
 
-      env {
-        DATABASE_URL       = "postgres://[[ var "pg_user" . ]]:[[ var "pg_password" . ]]@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable"
+      env {service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable"
         MINIO_ENDPOINT     = "[[ var "service_ip" . ]]:[[ var "minio_port" . ]]"
         MINIO_ACCESS_KEY   = "[[ var "minio_root_user" . ]]"
-        MINIO_SECRET_KEY   = "[[ var "minio_root_password" . ]]"
         MINIO_USE_SSL      = "false"
         MUSEUM_BUCKET_NAME = "[[ var "bucket_name" . ]]"
         TZ                 = "Europe/Stockholm"
       }
+
+      # Secrets from a Nomad Variable, not the job spec: inline they were
+      # readable via `nomad job inspect` and stored unencrypted in raft.
+      # DATABASE_URL is assembled here because the password is embedded in it;
+      # the non-secret parts remain pack variables.
+      template {
+        destination = "secrets/db.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+{{ with nomadVar "nomad/jobs/museum-crawl" }}
+DATABASE_URL=postgres://[[ var "pg_user" . ]]:{{ .pg_password }}@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable
+MINIO_SECRET_KEY={{ .minio_root_password }}
+{{ end }}
+EOH
+      }
+
 
       resources {
         cpu        = 800

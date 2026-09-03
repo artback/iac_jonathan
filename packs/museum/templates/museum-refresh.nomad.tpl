@@ -39,9 +39,25 @@ job "museum-refresh" {
       }
 
       env {
-        DATABASE_URL         = "postgres://[[ var "pg_user" . ]]:[[ var "pg_password" . ]]@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable"
         NOMINATIM_USER_AGENT = "[[ var "nominatim_user_agent" . ]]"
         TZ                   = "Europe/Stockholm"
+      }
+
+      # Secret from a Nomad Variable, not the job spec: inline it was readable
+      # via `nomad job inspect` to any read-capable token and stored
+      # unencrypted in raft. The path is case-sensitive and must equal the job
+      # ID exactly, or the task 403s and never starts.
+      # DATABASE_URL is assembled here rather than above because the password is
+      # embedded in it; the non-secret parts stay pack variables.
+      template {
+        destination = "secrets/db.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+{{ with nomadVar "nomad/jobs/museum-refresh" }}
+DATABASE_URL=postgres://[[ var "pg_user" . ]]:{{ .pg_password }}@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable
+{{ end }}
+EOH
       }
 
       resources {

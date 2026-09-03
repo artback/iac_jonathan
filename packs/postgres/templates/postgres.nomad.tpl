@@ -34,9 +34,28 @@ job "postgres" {
       }
 
       env {
-        POSTGRES_USER     = "[[ var "pg_user" . ]]"
-        POSTGRES_PASSWORD = "[[ var "pg_password" . ]]" # Best practice is to use Nomad Secrets/Vault for this
-        POSTGRES_DB       = "[[ var "pg_db_name" . ]]"
+        POSTGRES_USER = "[[ var "pg_user" . ]]"
+        POSTGRES_DB   = "[[ var "pg_db_name" . ]]"
+      }
+
+      # The password comes from a Nomad Variable rather than the job spec. Put
+      # inline it was readable to any holder of a read-capable token via
+      # `nomad job inspect`, and stored unencrypted in raft; here it is
+      # encrypted at rest and reachable only by this job's workload identity.
+      #
+      #   nomad var put nomad/jobs/postgres pg_password=...
+      #
+      # The path is case-sensitive and must match the job ID exactly -- a
+      # mismatch yields a 403 and a task that never starts.
+      template {
+        destination = "secrets/db.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+{{ with nomadVar "nomad/jobs/postgres" }}
+POSTGRES_PASSWORD={{ .pg_password }}
+{{ end }}
+EOH
       }
 
       service {

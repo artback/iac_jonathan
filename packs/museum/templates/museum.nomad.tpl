@@ -66,14 +66,27 @@ job "museum" {
       }
 
       env {
-        POSTGRES_USER     = "[[ var "pg_user" . ]]"
-        POSTGRES_PASSWORD = "[[ var "pg_password" . ]]"
-        POSTGRES_DB       = "[[ var "pg_db_name" . ]]"
+        POSTGRES_USER = "[[ var "pg_user" . ]]"
+        POSTGRES_DB   = "[[ var "pg_db_name" . ]]"
         # The image only initialises a cluster when this directory is empty, so
         # naming it explicitly is what makes a restored volume be adopted
         # rather than ignored.
         PGDATA = "/var/lib/postgresql/data"
       }
+
+      # From a Nomad Variable, not the job spec: inline it is readable via
+      # `nomad job inspect` and stored unencrypted in raft.
+      template {
+        destination = "secrets/db.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+{{ with nomadVar "nomad/jobs/museum" }}
+POSTGRES_PASSWORD={{ .pg_password }}
+{{ end }}
+EOH
+      }
+
 
       resources {
         cpu        = 1000
@@ -320,13 +333,27 @@ job "museum" {
 
       env {
         MINIO_ROOT_USER     = "[[ var "minio_root_user" . ]]"
-        MINIO_ROOT_PASSWORD = "[[ var "minio_root_password" . ]]"
 
         # Declares the Kafka notification target. The bucket rule that actually
         # uses it is attached by minio-init below.
         MINIO_NOTIFY_KAFKA_ENABLE_1  = "on"
         MINIO_NOTIFY_KAFKA_BROKERS_1 = "[[ var "service_ip" . ]]:[[ var "kafka_port" . ]]"
         MINIO_NOTIFY_KAFKA_TOPIC_1   = "[[ var "kafka_topic" . ]]"
+      }
+
+      # From a Nomad Variable, not the job spec: inline it is readable via
+      # `nomad job inspect` and stored unencrypted in raft. MinIO refuses to
+      # start at all without this, so a missing variable fails loudly rather
+      # than silently running unauthenticated.
+      template {
+        destination = "secrets/minio.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+{{ with nomadVar "nomad/jobs/museum" }}
+MINIO_ROOT_PASSWORD={{ .minio_root_password }}
+{{ end }}
+EOH
       }
 
       resources {
@@ -428,9 +455,22 @@ job "museum" {
         # symptom is this task waiting for a MinIO that is demonstrably up.
         MINIO_HOST          = "localhost:9000"
         MINIO_ROOT_USER     = "[[ var "minio_root_user" . ]]"
-        MINIO_ROOT_PASSWORD = "[[ var "minio_root_password" . ]]"
         BUCKET              = "[[ var "bucket_name" . ]]"
       }
+
+      # From a Nomad Variable, not the job spec: inline it is readable via
+      # `nomad job inspect` and stored unencrypted in raft.
+      template {
+        destination = "secrets/minio.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+{{ with nomadVar "nomad/jobs/museum" }}
+MINIO_ROOT_PASSWORD={{ .minio_root_password }}
+{{ end }}
+EOH
+      }
+
 
       resources {
         cpu    = 100
@@ -504,10 +544,23 @@ job "museum" {
       }
 
       env {
-        DATABASE_URL         = "postgres://[[ var "pg_user" . ]]:[[ var "pg_password" . ]]@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable"
         NOMINATIM_USER_AGENT = "[[ var "nominatim_user_agent" . ]]"
         TZ                   = "Europe/Stockholm"
       }
+
+      # From a Nomad Variable, not the job spec: inline it is readable via
+      # `nomad job inspect` and stored unencrypted in raft.
+      template {
+        destination = "secrets/db.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+{{ with nomadVar "nomad/jobs/museum" }}
+DATABASE_URL=postgres://[[ var "pg_user" . ]]:{{ .pg_password }}@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable
+{{ end }}
+EOH
+      }
+
 
       resources {
         cpu        = 500
@@ -603,7 +656,7 @@ EOH
         env         = true
         change_mode = "restart"
         data        = <<EOH
-TS_AUTHKEY="[[ var "tailscale_authkey" . ]]"
+{{ with nomadVar "nomad/jobs/museum" }}TS_AUTHKEY="{{ .tailscale_authkey }}"{{ end }}
 EOH
       }
 
@@ -667,10 +720,8 @@ EOH
       }
 
       env {
-        DATABASE_URL         = "postgres://[[ var "pg_user" . ]]:[[ var "pg_password" . ]]@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable"
         MINIO_ENDPOINT       = "[[ var "service_ip" . ]]:[[ var "minio_port" . ]]"
         MINIO_ACCESS_KEY     = "[[ var "minio_root_user" . ]]"
-        MINIO_SECRET_KEY     = "[[ var "minio_root_password" . ]]"
         MINIO_USE_SSL        = "false"
         MUSEUM_BUCKET_NAME   = "[[ var "bucket_name" . ]]"
         KAFKA_BROKER_LOCAL   = "[[ var "service_ip" . ]]:[[ var "kafka_port" . ]]"
@@ -678,6 +729,20 @@ EOH
         KAFKA_GROUP_ID       = "[[ var "kafka_group_id" . ]]"
         NOMINATIM_USER_AGENT = "[[ var "nominatim_user_agent" . ]]"
         TZ                   = "Europe/Stockholm"
+      }
+
+      # From a Nomad Variable, not the job spec: inline these are readable via
+      # `nomad job inspect` and stored unencrypted in raft.
+      template {
+        destination = "secrets/enrich.env"
+        env         = true
+        change_mode = "restart"
+        data        = <<EOH
+{{ with nomadVar "nomad/jobs/museum" }}
+DATABASE_URL=postgres://[[ var "pg_user" . ]]:{{ .pg_password }}@[[ var "service_ip" . ]]:[[ var "pg_port" . ]]/[[ var "pg_db_name" . ]]?sslmode=disable
+MINIO_SECRET_KEY={{ .minio_root_password }}
+{{ end }}
+EOH
       }
 
       resources {
